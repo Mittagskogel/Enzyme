@@ -5011,12 +5011,7 @@ private:
     Args.push_back(B.getInt64(truncation.getTo().exponentWidth));
     Args.push_back(B.getInt64(truncation.getTo().significandWidth));
     Args.push_back(B.getInt64(truncation.getMode()));
-#if LLVM_VERSION_MAJOR <= 14
-    Args.push_back(B.CreateBitCast(LocStr, NullPtr->getType()));
-#else
     Args.push_back(LocStr);
-#endif
-
     auto FprtFunc = getFPRTFunc(Name, Args, RetTy);
     return cast<CallInst>(B.CreateCall(FprtFunc, Args));
   }
@@ -5028,7 +5023,7 @@ public:
     toType = truncation.getToType(ctx);
     if (fromType == toType)
       assert(truncation.isToFPRT());
-    NullPtr = ConstantPointerNull::get(getDefaultAnonymousTapeType(ctx));
+    NullPtr = ConstantPointerNull::get(PointerType::get(ctx, 0));
   }
 
   Type *getFromType() { return fromType; }
@@ -5063,16 +5058,13 @@ public:
   // compilation units.
   GlobalValue *getUniquedLocStr(Instruction &I) {
     auto M = I.getParent()->getParent()->getParent();
+    std::string FileName = M->getName().str();
 
-    std::string FileName = "unknown";
     unsigned LineNo = 0;
     unsigned ColNo = 0;
-
-    DILocation *DL = I.getDebugLoc();
-    if (DL) {
-      FileName = DL->getFilename();
-      LineNo = DL->getLine();
-      ColNo = DL->getColumn();
+    if (I.getDebugLoc().get()) {
+      LineNo = I.getDebugLoc().getLine();
+      ColNo = I.getDebugLoc().getCol();
     }
 
     auto Key = std::make_tuple(FileName, LineNo, ColNo);

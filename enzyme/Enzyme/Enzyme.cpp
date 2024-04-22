@@ -24,7 +24,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include <llvm/Config/llvm-config.h>
-#include <memory>
+#include <llvm/IR/GlobalValue.h>
 
 #if LLVM_VERSION_MAJOR >= 16
 #define private public
