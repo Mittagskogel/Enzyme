@@ -1727,12 +1727,8 @@ void clearFunctionAttributes(Function *f) {
 #if LLVM_VERSION_MAJOR >= 17
       Attribute::NoFPClass,
 #endif
-    Attribute::NoUndef,
-    Attribute::NonNull,
-    Attribute::ZExt,
-    Attribute::SExt,
-    Attribute::NoAlias
-  };
+      Attribute::NoUndef, Attribute::NonNull, Attribute::ZExt,
+      Attribute::NoAlias};
   for (auto attr : attrs) {
     if (f->hasRetAttribute(attr)) {
       f->removeRetAttr(attr);
@@ -2564,11 +2560,8 @@ const AugmentedReturn &EnzymeLogic::CreateAugmentedPrimal(
 #if LLVM_VERSION_MAJOR >= 17
       llvm::Attribute::NoFPClass,
 #endif
-    llvm::Attribute::NoAlias,
-    llvm::Attribute::NoUndef,
-    llvm::Attribute::NonNull,
-    llvm::Attribute::ZExt,
-    llvm::Attribute::SExt,
+      llvm::Attribute::NoAlias,   llvm::Attribute::NoUndef,
+      llvm::Attribute::NonNull,   llvm::Attribute::ZExt,
   };
   for (auto attr : attrs) {
     if (gutils->newFunc->hasRetAttribute(attr)) {

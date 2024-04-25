@@ -30,9 +30,6 @@ double intrinsics(double a, double b) {
 double constt(double a, double b) {
     return 2;
 }
-void const_store(double *a) {
-    *a = 2.0;
-}
 double phinode(double a, double b, int n) {
     double sum = 0;
     for (int i = 0; i < n; i++) {
