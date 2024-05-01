@@ -24,6 +24,7 @@
 //
 //===----------------------------------------------------------------------===//
 #include <llvm/Config/llvm-config.h>
+#include <llvm/IR/GlobalValue.h>
 
 #if LLVM_VERSION_MAJOR >= 16
 #define private public
@@ -2108,6 +2109,8 @@ public:
   }
 
   bool handleFullModuleTrunc(Function &F) {
+    if (F.getName().starts_with(EnzymeFPRTPrefix))
+      return false;
     typedef std::vector<FloatTruncation> TruncationsTy;
     static TruncationsTy FullModuleTruncs = []() -> TruncationsTy {
       StringRef ConfigStr(EnzymeTruncateAll);

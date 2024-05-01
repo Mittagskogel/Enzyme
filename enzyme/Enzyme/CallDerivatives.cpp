@@ -1157,7 +1157,7 @@ void AdjointGenerator::handleMPI(llvm::CallInst &call, llvm::Function *called,
         ss << *gutils->oldFunc << "\n";
         ss << *gutils->newFunc << "\n";
         ss << " call: " << call << "\n";
-        ss << " unhandled mpi_allreduce op: " << *orig_op << "\n";
+        ss << " unhandled mpi_reduce op: " << *orig_op << "\n";
         if (CustomErrorHandler) {
           CustomErrorHandler(ss.str().c_str(), wrap(&call),
                              ErrorType::NoDerivative, gutils, nullptr,
@@ -1188,7 +1188,7 @@ void AdjointGenerator::handleMPI(llvm::CallInst &call, llvm::Function *called,
           {ValueType::Shadow, ValueType::Shadow, ValueType::Primal,
            ValueType::Primal, ValueType::Primal, ValueType::Primal,
            ValueType::Primal},
-          Builder2, /*lookup*/ true);
+          Builder2, /*lookup*/ !forwardMode);
 
       Value *count = gutils->getNewFromOriginal(orig_count);
       if (!forwardMode)
@@ -1198,7 +1198,7 @@ void AdjointGenerator::handleMPI(llvm::CallInst &call, llvm::Function *called,
       if (!forwardMode)
         datatype = lookup(datatype, Builder2);
 
-      Value *op = lookup(gutils->getNewFromOriginal(orig_op), Builder2);
+      Value *op = gutils->getNewFromOriginal(orig_op);
       if (!forwardMode)
         op = lookup(op, Builder2);
 
@@ -3151,7 +3151,8 @@ bool AdjointGenerator::handleKnownCallDerivatives(
           };
           applyChainRule(Builder2, rule, tofree);
         }
-      } else if (Mode == DerivativeMode::ForwardMode) {
+      } else if (Mode == DerivativeMode::ForwardMode ||
+                 Mode == DerivativeMode::ForwardModeError) {
         IRBuilder<> Builder2(&call);
         getForwardBuilder(Builder2);
 
@@ -3195,7 +3196,8 @@ bool AdjointGenerator::handleKnownCallDerivatives(
     }
 
     // Cache and rematerialization irrelevant for forward mode.
-    if (Mode == DerivativeMode::ForwardMode) {
+    if (Mode == DerivativeMode::ForwardMode ||
+        Mode == DerivativeMode::ForwardModeError) {
       eraseIfUnused(call);
       return true;
     }
@@ -3964,7 +3966,8 @@ bool AdjointGenerator::handleKnownCallDerivatives(
     assert(gutils->invertedPointers.find(&call) ==
            gutils->invertedPointers.end());
 
-    if (Mode == DerivativeMode::ForwardMode) {
+    if (Mode == DerivativeMode::ForwardMode ||
+        Mode == DerivativeMode::ForwardModeError) {
       if (!gutils->isConstantValue(call.getArgOperand(0))) {
         IRBuilder<> Builder2(&call);
         getForwardBuilder(Builder2);
