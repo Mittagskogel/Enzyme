@@ -6518,6 +6518,7 @@ llvm::Function *EnzymeLogic::CreateNoFree(RequestContext context, Function *F) {
   };
 
   StringSet<> NoFrees = {"mpfr_greater_p",
+                        "fprintf",
                          "memchr",
                          "time",
                          "strlen",
