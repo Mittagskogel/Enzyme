@@ -3275,6 +3275,7 @@ public:
 AnalysisKey EnzymeNewPM::Key;
 
 #include "ActivityAnalysisPrinter.h"
+#include "JLInstSimplify.h"
 #include "PreserveNVVM.h"
 #include "TypeAnalysis/TypeAnalysisPrinter.h"
 #include "llvm/Passes/PassBuilder.h"
@@ -3832,6 +3833,10 @@ void registerEnzyme(llvm::PassBuilder &PB) {
          llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) {
         if (Name == "print-activity-analysis") {
           FPM.addPass(ActivityAnalysisPrinterNewPM());
+          return true;
+        }
+        if (Name == "jl-inst-simplify") {
+          FPM.addPass(JLInstSimplifyNewPM());
           return true;
         }
         return false;
