@@ -349,6 +349,7 @@ bool attributeKnownFunctions(llvm::Function &F) {
       "_ZNKSt8__detail20_Prime_rehash_policy14_M_need_rehashEmmm",
       "fprintf",
       "fwrite",
+      "fputc",
       "strtol",
       "getenv",
       "memchr",
