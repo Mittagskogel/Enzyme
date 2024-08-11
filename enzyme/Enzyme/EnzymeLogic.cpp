@@ -1765,8 +1765,12 @@ void clearFunctionAttributes(Function *f) {
 #if LLVM_VERSION_MAJOR >= 17
       Attribute::NoFPClass,
 #endif
-      Attribute::NoUndef, Attribute::NonNull, Attribute::ZExt,
-      Attribute::NoAlias};
+    Attribute::NoUndef,
+    Attribute::NonNull,
+    Attribute::ZExt,
+    Attribute::SExt,
+    Attribute::NoAlias
+  };
   for (auto attr : attrs) {
 #if LLVM_VERSION_MAJOR >= 14
     if (f->hasRetAttribute(attr)) {
@@ -2623,8 +2627,11 @@ const AugmentedReturn &EnzymeLogic::CreateAugmentedPrimal(
 #if LLVM_VERSION_MAJOR >= 17
       llvm::Attribute::NoFPClass,
 #endif
-      llvm::Attribute::NoAlias,   llvm::Attribute::NoUndef,
-      llvm::Attribute::NonNull,   llvm::Attribute::ZExt,
+    llvm::Attribute::NoAlias,
+    llvm::Attribute::NoUndef,
+    llvm::Attribute::NonNull,
+    llvm::Attribute::ZExt,
+    llvm::Attribute::SExt,
   };
   for (auto attr : attrs) {
 #if LLVM_VERSION_MAJOR >= 14
@@ -5874,6 +5881,11 @@ llvm::Function *EnzymeLogic::CreateBatch(RequestContext context,
       BasicBlock::Create(NewF->getContext(), "placeholders", NewF);
 
   IRBuilder<> PlaceholderBuilder(placeholderBB);
+#if LLVM_VERSION_MAJOR >= 18
+  auto It = PlaceholderBuilder.GetInsertPoint();
+  It.setHeadBit(true);
+  PlaceholderBuilder.SetInsertPoint(It);
+#endif
   PlaceholderBuilder.SetCurrentDebugLocation(DebugLoc());
   ValueToValueMapTy vmap;
   auto DestArg = NewF->arg_begin();
@@ -6053,6 +6065,11 @@ llvm::Function *EnzymeLogic::CreateBatch(RequestContext context,
             new_val_1->getNextNode() ? new_val_1->getNextNode() : new_val_1;
         IRBuilder<> Builder2(insertPoint);
         Builder2.SetCurrentDebugLocation(DebugLoc());
+#if LLVM_VERSION_MAJOR >= 18
+        auto It = Builder2.GetInsertPoint();
+        It.setHeadBit(true);
+        Builder2.SetInsertPoint(It);
+#endif
         for (unsigned i = 1; i < width; ++i) {
           PHINode *placeholder = Builder2.CreatePHI(I.getType(), 0);
           vectorizedValues[&I].push_back(placeholder);
@@ -6336,6 +6353,11 @@ llvm::Function *EnzymeLogic::CreateNoFree(RequestContext context, Function *F) {
 
   // clang-format off
   StringSet<> NoFreeDemangles = {
+      "std::__u::locale::~locale())",
+      "std::__u::locale::use_facet(std::__u::locale::id&) const",
+      "std::__u::ios_base::getloc() const",
+      "std::__u::ios_base::clear(unsigned int)",
+
       "std::basic_ostream<char, std::char_traits<char>>::basic_ostream(std::basic_streambuf<char, std::char_traits<char>>*)",
       "std::basic_ostream<char, std::char_traits<char>>::flush()",
       "std::basic_ostream<char, std::char_traits<char>>& std::__ostream_insert<char, std::char_traits<char> >(std::basic_ostream<char, std::char_traits<char> >&)",
