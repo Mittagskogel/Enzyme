@@ -1727,8 +1727,12 @@ void clearFunctionAttributes(Function *f) {
 #if LLVM_VERSION_MAJOR >= 17
       Attribute::NoFPClass,
 #endif
-      Attribute::NoUndef, Attribute::NonNull, Attribute::ZExt,
-      Attribute::NoAlias};
+    Attribute::NoUndef,
+    Attribute::NonNull,
+    Attribute::ZExt,
+    Attribute::SExt,
+    Attribute::NoAlias
+  };
   for (auto attr : attrs) {
     if (f->hasRetAttribute(attr)) {
       f->removeRetAttr(attr);
@@ -2560,8 +2564,11 @@ const AugmentedReturn &EnzymeLogic::CreateAugmentedPrimal(
 #if LLVM_VERSION_MAJOR >= 17
       llvm::Attribute::NoFPClass,
 #endif
-      llvm::Attribute::NoAlias,   llvm::Attribute::NoUndef,
-      llvm::Attribute::NonNull,   llvm::Attribute::ZExt,
+    llvm::Attribute::NoAlias,
+    llvm::Attribute::NoUndef,
+    llvm::Attribute::NonNull,
+    llvm::Attribute::ZExt,
+    llvm::Attribute::SExt,
   };
   for (auto attr : attrs) {
     if (gutils->newFunc->hasRetAttribute(attr)) {
@@ -5786,6 +5793,11 @@ llvm::Function *EnzymeLogic::CreateBatch(RequestContext context,
       BasicBlock::Create(NewF->getContext(), "placeholders", NewF);
 
   IRBuilder<> PlaceholderBuilder(placeholderBB);
+#if LLVM_VERSION_MAJOR >= 18
+  auto It = PlaceholderBuilder.GetInsertPoint();
+  It.setHeadBit(true);
+  PlaceholderBuilder.SetInsertPoint(It);
+#endif
   PlaceholderBuilder.SetCurrentDebugLocation(DebugLoc());
   ValueToValueMapTy vmap;
   auto DestArg = NewF->arg_begin();
