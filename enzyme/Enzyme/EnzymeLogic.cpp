@@ -6307,6 +6307,8 @@ llvm::Value *EnzymeLogic::CreateNoFree(RequestContext context,
       return GV;
     if (GV->getName() == "_ZSt4cout")
       return GV;
+    if (GV->getName() == "_ZNSt3__u5wcoutE")
+      return GV;
   }
 
   if (context.ip) {
