@@ -70,6 +70,10 @@ __ENZYME_MPFR_DOUBLE_BINFUNCINTR_DEFAULT_ROUNDING(minnum, min);
 __ENZYME_MPFR_BIN_INT(intr, llvm_powi_f64_i32, pow_si, 64_52, double, d, double,
                       d, int32_t, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 
+// ldexp for openmc
+__ENZYME_MPFR_BIN_INT(func, ldexp, mul_2ui, 64_52, double, d, double,
+                      d, int32_t, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+
 // Unary operations
 __ENZYME_MPFR_SINGOP_DOUBLE_FLOAT(sqrt, sqrt);
 
@@ -121,6 +125,12 @@ __ENZYME_MPFR_FMULADD(llvm_fmuladd, 64_52, double, d, f64,
                       __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 __ENZYME_MPFR_FMULADD(llvm_fma, 64_52, double, d, f64,
                       __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+
+// Quaternary operations (mulxc3, divxc3)
+__ENZYME_MPFR_MULXC3(__muldc3, 64_52, double, d, f64,
+                     __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+__ENZYME_MPFR_DIVXC3(__divdc3, 64_52, double, d, f64,
+                     __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 
 // Comparisons
 __ENZYME_MPFR_FCMP(oeq, 1, == 0);

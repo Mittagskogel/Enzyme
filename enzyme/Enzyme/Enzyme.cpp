@@ -26,6 +26,8 @@
 #include <llvm/Config/llvm-config.h>
 #include <llvm/IR/GlobalValue.h>
 
+#include <iostream>
+
 #if LLVM_VERSION_MAJOR >= 16
 #define private public
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -2613,6 +2615,7 @@ public:
           enableEnzyme = true;
           truncateFuncMem = true;
         } else if (Fn->getName().contains("__enzyme_truncate_op_func")) {
+            std::cout << "truncate_op_func was seen." << std::endl;
           enableEnzyme = true;
           truncateFuncOp = true;
         } else if (Fn->getName().contains("__enzyme_truncate_mem_value")) {

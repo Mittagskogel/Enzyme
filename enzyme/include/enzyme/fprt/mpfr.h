@@ -28,6 +28,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+// For muldc3 and divdc3
+// #include <complex.h>
+
 #include "fprt.h"
 
 #ifdef __cplusplus
@@ -66,8 +69,8 @@ extern "C" {
 // TODO we need to provide f32 versions, and also instrument the
 // truncation/expansion between f32/f64/etc
 
-#define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak))
-#define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES __attribute__((weak))
+#define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak)) __attribute__((used))
+#define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES __attribute__((weak)) __attribute__((used))
 #define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE GMP_RNDN
 
 typedef struct __enzyme_fp {
@@ -241,6 +244,167 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
           mmul, __enzyme_fprt_ptr_to_double(mc), exponent, significand, mode,  \
           loc);                                                                \
       return madd;                                                             \
+    } else {                                                                   \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+    // TODO This does not handle infinities or NaN correctly
+#define __ENZYME_MPFR_MULXC3(LLVM_OP_NAME, FROM_TYPE, TYPE, MPFR_TYPE,         \
+                             LLVM_TYPE, ROUNDING_MODE)                         \
+  __ENZYME_MPFR_ATTRIBUTES                                                     \
+  TYPE _Complex __enzyme_fprt_##FROM_TYPE##_func_##LLVM_OP_NAME(               \
+       TYPE a, TYPE b, TYPE c, TYPE d, int64_t exponent, int64_t significand,  \
+       int64_t mode, const char *loc) {                                        \
+    if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      mpfr_t ma, mb, mc, md, mmul1, mmul2, mmul3, mmul4, madd1, madd2;         \
+      mpfr_init2(ma, significand);                                             \
+      mpfr_init2(mb, significand);                                             \
+      mpfr_init2(mc, significand);                                             \
+      mpfr_init2(md, significand);                                             \
+      mpfr_init2(mmul1, significand);                                          \
+      mpfr_init2(mmul2, significand);                                          \
+      mpfr_init2(mmul3, significand);                                          \
+      mpfr_init2(mmul4, significand);                                          \
+      mpfr_init2(madd1, significand);                                          \
+      mpfr_init2(madd2, significand);                                          \
+      mpfr_set_##MPFR_TYPE(ma, a, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(mb, b, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(mc, c, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(md, d, ROUNDING_MODE);                              \
+      mpfr_mul(mmul1, ma, mc, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul2, mb, md, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul3, mb, mc, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul4, ma, md, ROUNDING_MODE);                                  \
+      mpfr_add(madd1, mmul1, mmul2, ROUNDING_MODE);                            \
+      mpfr_add(madd2, mmul3, mmul4, ROUNDING_MODE);                            \
+      TYPE re = mpfr_get_##MPFR_TYPE(madd1, ROUNDING_MODE);                    \
+      TYPE im = mpfr_get_##MPFR_TYPE(madd1, ROUNDING_MODE);                    \
+      mpfr_clear(ma);                                                          \
+      mpfr_clear(mb);                                                          \
+      mpfr_clear(mc);                                                          \
+      mpfr_clear(md);                                                          \
+      mpfr_clear(mmul1);                                                       \
+      mpfr_clear(mmul2);                                                       \
+      mpfr_clear(mmul3);                                                       \
+      mpfr_clear(mmul4);                                                       \
+      mpfr_clear(madd1);                                                       \
+      mpfr_clear(madd2);                                                       \
+      TYPE _Complex res = __builtin_complex (re, im);                          \
+      return res;                                                              \
+    } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
+      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr(b);                        \
+      __enzyme_fp *mc = __enzyme_fprt_double_to_ptr(c);                        \
+      __enzyme_fp *md = __enzyme_fprt_double_to_ptr(d);                        \
+      double mmul1 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(ma), __enzyme_fprt_ptr_to_double(mc),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul2 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(mb), __enzyme_fprt_ptr_to_double(md),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul3 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(mb), __enzyme_fprt_ptr_to_double(mc),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul4 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(ma), __enzyme_fprt_ptr_to_double(md),    \
+          exponent, significand, mode, loc);                                   \
+      double madd1 = __enzyme_fprt_##FROM_TYPE##_binop_fadd(                   \
+          mmul1, mmul2, exponent, significand, mode,                           \
+          loc);                                                                \
+      double madd2 = __enzyme_fprt_##FROM_TYPE##_binop_fadd(                   \
+          mmul3, mmul4, exponent, significand, mode,                           \
+          loc);                                                                \
+      TYPE _Complex res = __builtin_complex (madd1, madd2);                    \
+      return res;                                                              \
+    } else {                                                                   \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
+    // TODO This does not handle infinities or NaN correctly
+#define __ENZYME_MPFR_DIVXC3(LLVM_OP_NAME, FROM_TYPE, TYPE, MPFR_TYPE,         \
+                             LLVM_TYPE, ROUNDING_MODE)                         \
+  __ENZYME_MPFR_ATTRIBUTES                                                     \
+  TYPE _Complex __enzyme_fprt_##FROM_TYPE##_func_##LLVM_OP_NAME(               \
+       TYPE a, TYPE b, TYPE c, TYPE d, int64_t exponent, int64_t significand,  \
+       int64_t mode, const char *loc) {                                        \
+    if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      mpfr_t ma, mb, mc, md, mmul1, mmul2, mmul3, mmul4, madd1, msub2;         \
+      mpfr_t msq1, msq2, mden;                                                 \
+      mpfr_t mre, mim;                                                         \
+      mpfr_init2(ma, significand);                                             \
+      mpfr_init2(mb, significand);                                             \
+      mpfr_init2(mc, significand);                                             \
+      mpfr_init2(md, significand);                                             \
+      mpfr_init2(mmul1, significand);                                          \
+      mpfr_init2(mmul2, significand);                                          \
+      mpfr_init2(mmul3, significand);                                          \
+      mpfr_init2(mmul4, significand);                                          \
+      mpfr_init2(madd1, significand);                                          \
+      mpfr_init2(msub2, significand);                                          \
+      mpfr_init2(msq1, significand);                                           \
+      mpfr_init2(msq2, significand);                                           \
+      mpfr_init2(mden, significand);                                           \
+      mpfr_set_##MPFR_TYPE(ma, a, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(mb, b, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(mc, c, ROUNDING_MODE);                              \
+      mpfr_set_##MPFR_TYPE(md, d, ROUNDING_MODE);                              \
+      mpfr_mul(msq1, mc, mc, ROUNDING_MODE);                                   \
+      mpfr_mul(msq2, md, md, ROUNDING_MODE);                                   \
+      mpfr_add(mden, msq1, msq2, ROUNDING_MODE);                               \
+      mpfr_mul(mmul1, ma, mc, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul2, mb, md, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul3, mb, mc, ROUNDING_MODE);                                  \
+      mpfr_mul(mmul4, ma, md, ROUNDING_MODE);                                  \
+      mpfr_add(madd1, mmul1, mmul2, ROUNDING_MODE);                            \
+      mpfr_sub(msub2, mmul3, mmul4, ROUNDING_MODE);                            \
+      mpfr_div(mre, madd1, mden, ROUNDING_MODE);                               \
+      mpfr_div(mim, msub2, mden, ROUNDING_MODE);                               \
+      TYPE re = mpfr_get_##MPFR_TYPE(madd1, ROUNDING_MODE);                    \
+      TYPE im = mpfr_get_##MPFR_TYPE(msub2, ROUNDING_MODE);                    \
+      mpfr_clear(ma);                                                          \
+      mpfr_clear(mb);                                                          \
+      mpfr_clear(mc);                                                          \
+      mpfr_clear(md);                                                          \
+      mpfr_clear(mmul1);                                                       \
+      mpfr_clear(mmul2);                                                       \
+      mpfr_clear(mmul3);                                                       \
+      mpfr_clear(mmul4);                                                       \
+      mpfr_clear(madd1);                                                       \
+      mpfr_clear(msub2);                                                       \
+      mpfr_clear(msq1);                                                        \
+      mpfr_clear(msq2);                                                        \
+      mpfr_clear(mden);                                                        \
+      mpfr_clear(mre);                                                         \
+      mpfr_clear(mim);                                                         \
+      TYPE _Complex res = __builtin_complex (re, im);                          \
+      return res;                                                              \
+    } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
+      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr(b);                        \
+      __enzyme_fp *mc = __enzyme_fprt_double_to_ptr(c);                        \
+      __enzyme_fp *md = __enzyme_fprt_double_to_ptr(d);                        \
+      double mmul1 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(ma), __enzyme_fprt_ptr_to_double(mc),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul2 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(mb), __enzyme_fprt_ptr_to_double(md),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul3 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(mb), __enzyme_fprt_ptr_to_double(mc),    \
+          exponent, significand, mode, loc);                                   \
+      double mmul4 = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                   \
+          __enzyme_fprt_ptr_to_double(ma), __enzyme_fprt_ptr_to_double(md),    \
+          exponent, significand, mode, loc);                                   \
+      double madd1 = __enzyme_fprt_##FROM_TYPE##_binop_fadd(                   \
+          mmul1, mmul2, exponent, significand, mode,                           \
+          loc);                                                                \
+      double madd2 = __enzyme_fprt_##FROM_TYPE##_binop_fadd(                   \
+          mmul3, mmul4, exponent, significand, mode,                           \
+          loc);                                                                \
+      TYPE _Complex res = __builtin_complex (madd1, madd2);                    \
+      return res;                                                              \
     } else {                                                                   \
       abort();                                                                 \
     }                                                                          \

@@ -5852,7 +5852,7 @@ llvm::Function *EnzymeLogic::CreateBatch(RequestContext context,
     llvm_unreachable("attempting to batch function without definition");
   }
 
-  NewF->setLinkage(Function::LinkageTypes::InternalLinkage);
+  // NewF->setLinkage(Function::LinkageTypes::InternalLinkage);
 
   ValueToValueMapTy originalToNewFn;
 
@@ -5889,6 +5889,7 @@ llvm::Function *EnzymeLogic::CreateBatch(RequestContext context,
   CloneFunctionInto(NewF, tobatch, vmap, true, Returns, "", nullptr);
 #endif
 
+  NewF->setVisibility(llvm::GlobalValue::DefaultVisibility);
   NewF->setLinkage(Function::LinkageTypes::InternalLinkage);
 
   // find instructions to vectorize (going up / overestimation)
