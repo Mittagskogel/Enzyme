@@ -168,6 +168,7 @@ struct ReverseCacheKey {
   llvm::Type *additionalType;
   bool forceAnonymousTape;
   const FnTypeInfo typeInfo;
+  bool runtimeActivity;
 
   /*
   inline bool operator==(const ReverseCacheKey& rhs) const {
@@ -258,6 +259,12 @@ struct ReverseCacheKey {
       return true;
     if (rhs.typeInfo < typeInfo)
       return false;
+
+    if (runtimeActivity < rhs.runtimeActivity)
+      return true;
+    if (rhs.runtimeActivity < runtimeActivity)
+      return false;
+
     // equal
     return false;
   }
@@ -434,6 +441,7 @@ public:
     bool AtomicAdd;
     bool omp;
     unsigned width;
+    bool runtimeActivity;
 
     inline bool operator<(const AugmentedCacheKey &rhs) const {
       if (fn < rhs.fn)
@@ -499,6 +507,11 @@ public:
       if (rhs.width < width)
         return false;
 
+      if (runtimeActivity < rhs.runtimeActivity)
+        return true;
+      if (rhs.runtimeActivity < runtimeActivity)
+        return false;
+
       // equal
       return false;
     }
@@ -528,7 +541,7 @@ public:
       llvm::ArrayRef<DIFFE_TYPE> constant_args, TypeAnalysis &TA,
       bool returnUsed, bool shadowReturnUsed, const FnTypeInfo &typeInfo,
       const std::vector<bool> _overwritten_args, bool forceAnonymousTape,
-      unsigned width, bool AtomicAdd, bool omp = false);
+      bool runtimeActivity, unsigned width, bool AtomicAdd, bool omp = false);
 
   std::map<ReverseCacheKey, llvm::Function *> ReverseCachedFunctions;
 
@@ -542,6 +555,7 @@ public:
     unsigned width;
     llvm::Type *additionalType;
     const FnTypeInfo typeInfo;
+    bool runtimeActivity;
 
     inline bool operator<(const ForwardCacheKey &rhs) const {
       if (todiff < rhs.todiff)
@@ -596,6 +610,12 @@ public:
         return true;
       if (rhs.typeInfo < typeInfo)
         return false;
+
+      if (runtimeActivity < rhs.runtimeActivity)
+        return true;
+      if (rhs.runtimeActivity < runtimeActivity)
+        return false;
+
       // equal
       return false;
     }
@@ -643,9 +663,9 @@ public:
   llvm::Function *CreateForwardDiff(
       RequestContext context, llvm::Function *todiff, DIFFE_TYPE retType,
       llvm::ArrayRef<DIFFE_TYPE> constant_args, TypeAnalysis &TA,
-      bool returnValue, DerivativeMode mode, bool freeMemory, unsigned width,
-      llvm::Type *additionalArg, const FnTypeInfo &typeInfo,
-      const std::vector<bool> _overwritten_args,
+      bool returnValue, DerivativeMode mode, bool freeMemory,
+      bool runtimeActivity, unsigned width, llvm::Type *additionalArg,
+      const FnTypeInfo &typeInfo, const std::vector<bool> _overwritten_args,
       const AugmentedReturn *augmented, bool omp = false);
 
   /// Create a function batched in its inputs.
