@@ -70,6 +70,9 @@ __ENZYME_MPFR_DOUBLE_BINFUNCINTR_DEFAULT_ROUNDING(minnum, min);
 __ENZYME_MPFR_BIN_INT(intr, llvm_powi_f64_i32, pow_si, 64_52, double, d, double,
                       d, int32_t, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 
+__ENZYME_MPFR_BIN_INT(func, ldexp, mul_2ui, 64_52, double, d, double,
+                      d, int32_t, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+
 // Unary operations
 __ENZYME_MPFR_SINGOP_DOUBLE_FLOAT(sqrt, sqrt);
 
