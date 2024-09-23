@@ -66,7 +66,7 @@ extern "C" {
 // TODO we need to provide f32 versions, and also instrument the
 // truncation/expansion between f32/f64/etc
 
-#define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak))
+#define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak)) __attribute__((used))
 #define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES __attribute__((weak))
 #define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE GMP_RNDN
 
