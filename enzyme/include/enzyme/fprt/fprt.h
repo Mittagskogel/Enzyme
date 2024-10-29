@@ -30,22 +30,24 @@ double __enzyme_fprt_64_52_const(double _a, int64_t exponent,
                                  int64_t significand, int64_t mode,
                                  const char *loc);
 
-[[maybe_unused]] static bool __enzyme_fprt_is_mem_mode(int64_t mode) {
+#define __ENZYME_FPRT_UTIL_ATTRIBUTES [[maybe_unused]] __attribute__((weak)) inline
+
+__ENZYME_FPRT_UTIL_ATTRIBUTES bool __enzyme_fprt_is_mem_mode(int64_t mode) {
   return mode & 0b0001;
 }
-[[maybe_unused]] static bool __enzyme_fprt_is_op_mode(int64_t mode) {
+__ENZYME_FPRT_UTIL_ATTRIBUTES bool __enzyme_fprt_is_op_mode(int64_t mode) {
   return mode & 0b0010;
 }
-[[maybe_unused]] static double __enzyme_fprt_idx_to_double(uint64_t p) {
+__ENZYME_FPRT_UTIL_ATTRIBUTES double __enzyme_fprt_idx_to_double(uint64_t p) {
   return *((double *)(&p));
 }
-[[maybe_unused]] static uint64_t __enzyme_fprt_double_to_idx(double d) {
+__ENZYME_FPRT_UTIL_ATTRIBUTES uint64_t __enzyme_fprt_double_to_idx(double d) {
   return *((uint64_t *)(&d));
 }
-[[maybe_unused]] static double __enzyme_fprt_ptr_to_double(__enzyme_fp *p) {
-  return *((double *)(&p));
+__ENZYME_FPRT_UTIL_ATTRIBUTES double __enzyme_fprt_ptr_to_double(__enzyme_fp *p) {
+ return *((double *)(&p));
 }
-[[maybe_unused]] static __enzyme_fp *__enzyme_fprt_double_to_ptr(double d) {
+__ENZYME_FPRT_UTIL_ATTRIBUTES __enzyme_fp *__enzyme_fprt_double_to_ptr(double d) {
   return *((__enzyme_fp **)(&d));
 }
 
