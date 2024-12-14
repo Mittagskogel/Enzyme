@@ -973,12 +973,10 @@ bool ActivityAnalyzer::isConstantInstruction(TypeResults const &TR,
         insertConstantsFrom(TR, *DownHypothesis);
       return true;
     } else if (directions == 3) {
-      if (isa<LoadInst>(I) || isa<StoreInst>(I) || isa<BinaryOperator>(I)) {
-        for (auto &op : I->operands()) {
-          if (!UpHypothesis->isConstantValue(TR, op) &&
-              EnzymeEnableRecursiveHypotheses) {
-            ReEvaluateInstIfInactiveValue[op].insert(I);
-          }
+      for (auto &op : I->operands()) {
+        if (!UpHypothesis->isConstantValue(TR, op) &&
+            EnzymeEnableRecursiveHypotheses) {
+          ReEvaluateInstIfInactiveValue[op].insert(I);
         }
       }
     }
@@ -1778,6 +1776,13 @@ bool ActivityAnalyzer::isConstantValue(TypeResults const &TR, Value *Val) {
               InsertConstantValue(TR, Val);
               insertConstantsFrom(TR, *UpHypothesis);
               return true;
+            } else if (directions == 3) {
+              for (auto &op : inst->operands()) {
+                if (!UpHypothesis->isConstantValue(TR, op) &&
+                    EnzymeEnableRecursiveHypotheses) {
+                  ReEvaluateValueIfInactiveValue[op].insert(Val);
+                }
+              }
             }
           }
         }
@@ -1819,6 +1824,14 @@ bool ActivityAnalyzer::isConstantValue(TypeResults const &TR, Value *Val) {
         if (EnzymePrintActivity)
           llvm::errs() << " cannot show constant instruction hypothesis: "
                        << *VI << "\n";
+        if (directions == 3) {
+          for (auto &op : VI->operands()) {
+            if (!UpHypothesis->isConstantValue(TR, op) &&
+                EnzymeEnableRecursiveHypotheses) {
+              ReEvaluateValueIfInactiveValue[op].insert(Val);
+            }
+          }
+        }
       }
     }
 
