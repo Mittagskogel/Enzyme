@@ -119,6 +119,9 @@ __ENZYME_MPFR_SINGOP_DOUBLE_FLOAT(nearbyint, rint);
 __ENZYME_MPFR_SINGOP(unaryop, fneg, neg, 64_52, double, d, double,
                      d, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE)
 
+__ENZYME_MPFR_SINGOP(unaryop, fneg, neg, 32_23, float, d, float,
+                     d, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE)
+
 // Ternary operation
 __ENZYME_MPFR_FMULADD(llvm_fmuladd, 64_52, double, d, f64,
                       __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
