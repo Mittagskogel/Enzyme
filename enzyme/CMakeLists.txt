@@ -51,6 +51,11 @@ get_filename_component(LLVM_ABSOLUTE_DIR
     "${LLVM_DIR}"
     REALPATH BASE_DIR "${CMAKE_BINARY_DIR}")
 
+if (NOT EXISTS "${LLVM_DIR}")
+  message("Looking for LLVM_DIR at ${LLVM_DIR}")
+  message(SEND_ERROR "The given LLVM_DIR does not exist. Typo?")
+endif()
+
 set(LLVM_DIR "${LLVM_ABSOLUTE_DIR}" CACHE FILEPATH "b" FORCE)
 
 if (EXISTS "${LLVM_DIR}/lib/cmake/llvm/LLVMConfig.cmake")
@@ -215,8 +220,8 @@ message("LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
 message("found LLVM definitions " ${LLVM_DEFINITIONS})
 message("found LLVM version " ${LLVM_VERSION_MAJOR})
 
-if(LLVM_VERSION_MAJOR LESS 9)
-  message(FATAL_ERROR "LLVM version < 9 is not supported")
+if(LLVM_VERSION_MAJOR LESS 15)
+  message(FATAL_ERROR "LLVM version < 15 is not supported")
 endif()
 
 option(ENZYME_FLANG_VERSION "Build for non-version compliant FLANG" OFF)
@@ -252,20 +257,7 @@ file(READ ${LLVM_IDIR}/llvm/Analysis/TargetLibraryInfo.h INPUT_TEXT)
 string(REPLACE "class TargetLibraryInfo {" "class TargetLibraryInfo {public:" INPUT_TEXT "${INPUT_TEXT}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/include/SCEV/TargetLibraryInfo.h" "${INPUT_TEXT}")
 
-if (${LLVM_VERSION_MAJOR} GREATER_EQUAL 11)
 file(READ ${LLVM_IDIR}/llvm/Transforms/Utils/ScalarEvolutionExpander.h INPUT_TEXT)
-else()
-file(READ ${LLVM_IDIR}/llvm/Analysis/ScalarEvolutionExpander.h INPUT_TEXT)
-endif()
-
-if (${LLVM_VERSION_MAJOR} LESS 12)
-string(REPLACE "#define LLVM_ANALYSIS_SCALAREVOLUTIONEXPANDER_H" "#define LLVM_ANALYSIS_SCALAREVOLUTIONEXPANDER_H\n#include \"SCEV/ScalarEvolution.h\""  INPUT_TEXT "${INPUT_TEXT}")
-string(REPLACE "LLVM_ANALYSIS" "FAKELLVM_ANALYSIS" INPUT_TEXT "${INPUT_TEXT}")
-string(REPLACE "class SCEVExpander " "namespace fake {\n  class SCEVExpander " INPUT_TEXT "${INPUT_TEXT}")
-string(REPLACE "struct SCEVOperand " "namespace fake {\n  struct SCEVOperand " INPUT_TEXT "${INPUT_TEXT}")
-string(REPLACE "};\n}" "};\n}}" INPUT_TEXT "${INPUT_TEXT}")
-string(REPLACE "const SCEV* S;\n};\n" "const SCEV* S;\n};\n}\n" INPUT_TEXT "${INPUT_TEXT}")
-endif()
 
 find_library(MPFR_LIB_PATH mpfr)
 CHECK_INCLUDE_FILE("mpfr.h" HAS_MPFR_H)
@@ -310,7 +302,7 @@ set(bundled_includes "${CMAKE_CURRENT_BINARY_DIR}/Enzyme/Clang/bundled_includes.
 list(APPEND ENZYME_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.sh)
 add_custom_command(OUTPUT ${bundled_includes}
   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.sh
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/enzyme/enzyme
   ${bundled_includes}
   DEPENDS ${ENZYME_INCLUDES}
   COMMENT "Bundling includes"

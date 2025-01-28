@@ -3,6 +3,14 @@
 
 #include <stdint.h>
 
+#define __ENZYME_MPFR_ATTRIBUTES                                               \
+  [[maybe_unused]] __attribute__((weak)) __attribute__((used))
+#define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                      \
+  __attribute__((weak)) __attribute__((used))
+#define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE GMP_RNDN
+
+#define __ENZYME_MPFR_MALLOC_FAILURE_EXIT_STATUS 114
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -30,24 +38,22 @@ double __enzyme_fprt_64_52_const(double _a, int64_t exponent,
                                  int64_t significand, int64_t mode,
                                  const char *loc);
 
-#define __ENZYME_FPRT_UTIL_ATTRIBUTES [[maybe_unused]] __attribute__((weak)) inline
-
-__ENZYME_FPRT_UTIL_ATTRIBUTES bool __enzyme_fprt_is_mem_mode(int64_t mode) {
+__ENZYME_MPFR_ATTRIBUTES bool __enzyme_fprt_is_mem_mode(int64_t mode) {
   return mode & 0b0001;
 }
-__ENZYME_FPRT_UTIL_ATTRIBUTES bool __enzyme_fprt_is_op_mode(int64_t mode) {
+__ENZYME_MPFR_ATTRIBUTES bool __enzyme_fprt_is_op_mode(int64_t mode) {
   return mode & 0b0010;
 }
-__ENZYME_FPRT_UTIL_ATTRIBUTES double __enzyme_fprt_idx_to_double(uint64_t p) {
+__ENZYME_MPFR_ATTRIBUTES double __enzyme_fprt_idx_to_double(uint64_t p) {
   return *((double *)(&p));
 }
-__ENZYME_FPRT_UTIL_ATTRIBUTES uint64_t __enzyme_fprt_double_to_idx(double d) {
+__ENZYME_MPFR_ATTRIBUTES uint64_t __enzyme_fprt_double_to_idx(double d) {
   return *((uint64_t *)(&d));
 }
-__ENZYME_FPRT_UTIL_ATTRIBUTES double __enzyme_fprt_ptr_to_double(__enzyme_fp *p) {
- return *((double *)(&p));
+__ENZYME_MPFR_ATTRIBUTES double __enzyme_fprt_ptr_to_double(__enzyme_fp *p) {
+  return *((double *)(&p));
 }
-__ENZYME_FPRT_UTIL_ATTRIBUTES __enzyme_fp *__enzyme_fprt_double_to_ptr(double d) {
+__ENZYME_MPFR_ATTRIBUTES __enzyme_fp *__enzyme_fprt_double_to_ptr(double d) {
   return *((__enzyme_fp **)(&d));
 }
 

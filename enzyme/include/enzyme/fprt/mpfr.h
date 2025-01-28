@@ -27,6 +27,8 @@
 #include <mpfr.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <map>
+#include <string.h>
 
 #include "fprt.h"
 
@@ -66,27 +68,100 @@ extern "C" {
 // TODO we need to provide f32 versions, and also instrument the
 // truncation/expansion between f32/f64/etc
 
-#define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak)) __attribute__((used))
-#define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES __attribute__((weak))
-#define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE GMP_RNDN
-
 typedef struct __enzyme_fp {
-  mpfr_t v;
+  mpfr_t result;
+  // mpfr_t shadow; // 256 bit
+  double shadow;
 } __enzyme_fp;
+
+typedef struct __enzyme_op {
+  const char * op;         // Operation name
+  double mean_op = 0.0;    // Mean of operation error
+  double sqmean_op = 0.0;
+  double mean_ac = 0.0;    // Mean of accumulated error
+  double sqmean_ac = 0.0;
+  double mean_tr = 0.0;    // Mean of truncation error
+  double sqmean_tr = 0.0;
+  unsigned long long count = 0;  // Number of operations
+} __enzyme_op;
+
+__ENZYME_MPFR_ATTRIBUTES
+std::map<const char *, struct __enzyme_op> opdata;
+
+#ifdef ENZYME_FPRT_ENABLE_DUMPING
+#define ENZYME_DUMP(X, OP_TYPE, LLVM_OP_NAME, TAG)                             \
+  do {                                                                         \
+    fprintf(stderr, #OP_TYPE " " #LLVM_OP_NAME " " TAG ": %p ", X);            \
+    fprintf(stderr, "%f\n",                                                    \
+            mpfr_get_d(X->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE));       \
+  } while (0)
+#define ENZYME_DUMP_INPUT(X, OP_TYPE, LLVM_OP_NAME)                            \
+  ENZYME_DUMP(X, OP_TYPE, LLVM_OP_NAME, "in")
+#define ENZYME_DUMP_RESULT(X, OP_TYPE, LLVM_OP_NAME)                           \
+  ENZYME_DUMP(X, OP_TYPE, LLVM_OP_NAME, "res")
+#else
+#define ENZYME_DUMP_INPUT(X, OP_TYPE, LLVM_OP_NAME)                            \
+  do {                                                                         \
+  } while (0)
+#define ENZYME_DUMP_RESULT(X, OP_TYPE, LLVM_OP_NAME)                           \
+  do {                                                                         \
+  } while (0)
+#endif
+
+__ENZYME_MPFR_ATTRIBUTES
+double __enzyme_fprt_64_52_abs_err(double a, double b) {
+  return std::abs(a - b);
+}
+
+#ifdef ENZYME_FPRT_ENABLE_GARBAGE_COLLECTION
+
+void enzyme_fprt_gc_dump_status();
+double enzyme_fprt_gc_mark_seen(double a);
+void enzyme_fprt_gc_doit();
+
+void enzyme_fprt_op_dump_status();
+
+__ENZYME_MPFR_ATTRIBUTES
+double __enzyme_fprt_64_52_get(double _a, int64_t exponent, int64_t significand,
+                               int64_t mode, const char *loc);
+
+__ENZYME_MPFR_ATTRIBUTES
+double __enzyme_fprt_64_52_new(double _a, int64_t exponent, int64_t significand,
+                               int64_t mode, const char *loc);
+
+__ENZYME_MPFR_ATTRIBUTES
+double __enzyme_fprt_64_52_const(double _a, int64_t exponent,
+                                 int64_t significand, int64_t mode,
+                                 const char *loc);
+
+__ENZYME_MPFR_ATTRIBUTES
+__enzyme_fp *__enzyme_fprt_64_52_new_intermediate(int64_t exponent,
+                                                  int64_t significand,
+                                                  int64_t mode,
+                                                  const char *loc);
+
+__ENZYME_MPFR_ATTRIBUTES
+void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
+                                int64_t mode, const char *loc);
+
+#else
 
 __ENZYME_MPFR_ATTRIBUTES
 double __enzyme_fprt_64_52_get(double _a, int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
   __enzyme_fp *a = __enzyme_fprt_double_to_ptr(_a);
-  return mpfr_get_d(a->v, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+  return mpfr_get_d(a->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 }
 
 __ENZYME_MPFR_ATTRIBUTES
 double __enzyme_fprt_64_52_new(double _a, int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
   __enzyme_fp *a = (__enzyme_fp *)malloc(sizeof(__enzyme_fp));
-  mpfr_init2(a->v, significand);
-  mpfr_set_d(a->v, _a, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+  if (!a)
+    exit(__ENZYME_MPFR_MALLOC_FAILURE_EXIT_STATUS);
+  mpfr_init2(a->result, significand);
+  mpfr_set_d(a->result, _a, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
+  a->shadow = _a;
   return __enzyme_fprt_ptr_to_double(a);
 }
 
@@ -105,7 +180,9 @@ __enzyme_fp *__enzyme_fprt_64_52_new_intermediate(int64_t exponent,
                                                   int64_t mode,
                                                   const char *loc) {
   __enzyme_fp *a = (__enzyme_fp *)malloc(sizeof(__enzyme_fp));
-  mpfr_init2(a->v, significand);
+  if (!a)
+    exit(__ENZYME_MPFR_MALLOC_FAILURE_EXIT_STATUS);
+  mpfr_init2(a->result, significand);
   return a;
 }
 
@@ -115,9 +192,34 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
   free(__enzyme_fprt_double_to_ptr(a));
 }
 
+#endif
+
+// Handle the case where people zero out memory and expect the floating
+// point numbers there to be zero.
+__ENZYME_MPFR_ATTRIBUTES
+double __enzyme_fprt_64_52_check_zero(double _a, int64_t exponent,
+                                      int64_t significand, int64_t mode,
+                                      const char *loc) {
+  if ((*(uint64_t *)(&_a)) == 0)
+    return __enzyme_fprt_64_52_const(0, exponent, significand, mode, loc);
+  else
+    return _a;
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+__enzyme_fp *__enzyme_fprt_double_to_ptr_checked(double d, int64_t exponent,
+                                                 int64_t significand,
+                                                 int64_t mode,
+                                                 const char *loc) {
+  d = __enzyme_fprt_64_52_check_zero(d, exponent, significand, mode, loc);
+  return __enzyme_fprt_double_to_ptr(d);
+}
+
 #define __ENZYME_MPFR_SINGOP(OP_TYPE, LLVM_OP_NAME, MPFR_FUNC_NAME, FROM_TYPE, \
                              RET, MPFR_GET, ARG1, MPFR_SET_ARG1,               \
                              ROUNDING_MODE)                                    \
+  __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                            \
+  RET __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(ARG1 a); \
   __ENZYME_MPFR_ATTRIBUTES                                                     \
   RET __enzyme_fprt_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(                  \
       ARG1 a, int64_t exponent, int64_t significand, int64_t mode,             \
@@ -133,10 +235,39 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(mc);                                                          \
       return c;                                                                \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
-      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr_checked(                   \
+          a, exponent, significand, mode, loc);                                \
       __enzyme_fp *mc = __enzyme_fprt_64_52_new_intermediate(                  \
           exponent, significand, mode, loc);                                   \
-      mpfr_##MPFR_FUNC_NAME(mc->v, ma->v, ROUNDING_MODE);                      \
+      ENZYME_DUMP_INPUT(ma, OP_TYPE, LLVM_OP_NAME);                            \
+      mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, ROUNDING_MODE);            \
+      ENZYME_DUMP_RESULT(mc, OP_TYPE, LLVM_OP_NAME);                           \
+      mc->shadow = __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME( \
+        ma->shadow);                                                           \
+      double t_of_t = mpfr_get_##MPFR_GET(mc->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE); \
+      double r_of_t = __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME( \
+        mpfr_get_##MPFR_GET(ma->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE));          \
+      mpfr_t ra, rc;                                                           \
+      mpfr_init2(ra, significand);                                             \
+      mpfr_init2(rc, significand);                                             \
+      mpfr_set_##MPFR_SET_ARG1(ra, ma->shadow, ROUNDING_MODE);                 \
+      mpfr_##MPFR_FUNC_NAME(rc, ra, ROUNDING_MODE);                            \
+      double t_of_r = mpfr_get_##MPFR_GET(rc, ROUNDING_MODE);                  \
+      mpfr_clear(ra);                                                          \
+      mpfr_clear(rc);                                                          \
+      double err_op = __enzyme_fprt_64_52_abs_err(t_of_t, r_of_t);             \
+      double err_ac = __enzyme_fprt_64_52_abs_err(t_of_t, mc->shadow);         \
+      double err_tr = __enzyme_fprt_64_52_abs_err(t_of_r, mc->shadow);         \
+      if (!opdata[loc].count) {                                                \
+        opdata[loc].op = #LLVM_OP_NAME;                                        \
+      }                                                                        \
+      ++opdata[loc].count;                                                     \
+      opdata[loc].mean_op = (opdata[loc].mean_op + err_op) / 2.0;              \
+      opdata[loc].sqmean_op = (opdata[loc].sqmean_op + err_op*err_op) / 2.0;   \
+      opdata[loc].mean_ac = (opdata[loc].mean_ac + err_ac) / 2.0;              \
+      opdata[loc].sqmean_ac = (opdata[loc].sqmean_ac + err_ac*err_ac) / 2.0;   \
+      opdata[loc].mean_tr = (opdata[loc].mean_tr + err_tr) / 2.0;              \
+      opdata[loc].sqmean_tr = (opdata[loc].sqmean_tr + err_tr*err_tr) / 2.0;   \
       return __enzyme_fprt_ptr_to_double(mc);                                  \
     } else {                                                                   \
       abort();                                                                 \
@@ -148,6 +279,8 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
 #define __ENZYME_MPFR_BIN_INT(OP_TYPE, LLVM_OP_NAME, MPFR_FUNC_NAME,           \
                               FROM_TYPE, RET, MPFR_GET, ARG1, MPFR_SET_ARG1,   \
                               ARG2, ROUNDING_MODE)                             \
+  __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                            \
+  RET __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(ARG1 a, ARG2 b); \
   __ENZYME_MPFR_ATTRIBUTES                                                     \
   RET __enzyme_fprt_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(                  \
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
@@ -163,10 +296,13 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(mc);                                                          \
       return c;                                                                \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
-      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr_checked(                   \
+          a, exponent, significand, mode, loc);                                \
       __enzyme_fp *mc = __enzyme_fprt_64_52_new_intermediate(                  \
           exponent, significand, mode, loc);                                   \
-      mpfr_##MPFR_FUNC_NAME(mc->v, ma->v, b, ROUNDING_MODE);                   \
+      ENZYME_DUMP_INPUT(ma, OP_TYPE, LLVM_OP_NAME);                            \
+      mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, b, ROUNDING_MODE);         \
+      ENZYME_DUMP_RESULT(mc, OP_TYPE, LLVM_OP_NAME);                           \
       return __enzyme_fprt_ptr_to_double(mc);                                  \
     } else {                                                                   \
       abort();                                                                 \
@@ -176,6 +312,8 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
 #define __ENZYME_MPFR_BIN(OP_TYPE, LLVM_OP_NAME, MPFR_FUNC_NAME, FROM_TYPE,    \
                           RET, MPFR_GET, ARG1, MPFR_SET_ARG1, ARG2,            \
                           MPFR_SET_ARG2, ROUNDING_MODE)                        \
+  __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                            \
+  RET __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(ARG1 a, ARG2 b); \
   __ENZYME_MPFR_ATTRIBUTES                                                     \
   RET __enzyme_fprt_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(                  \
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
@@ -194,11 +332,47 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(mc);                                                          \
       return c;                                                                \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
-      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
-      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr(b);                        \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr_checked(                   \
+          a, exponent, significand, mode, loc);                                \
+      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr_checked(                   \
+          b, exponent, significand, mode, loc);                                \
       __enzyme_fp *mc = __enzyme_fprt_64_52_new_intermediate(                  \
           exponent, significand, mode, loc);                                   \
-      mpfr_##MPFR_FUNC_NAME(mc->v, ma->v, mb->v, ROUNDING_MODE);               \
+      ENZYME_DUMP_INPUT(ma, OP_TYPE, LLVM_OP_NAME);                            \
+      ENZYME_DUMP_INPUT(mb, OP_TYPE, LLVM_OP_NAME);                            \
+      mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, mb->result,                \
+                            ROUNDING_MODE);                                    \
+      ENZYME_DUMP_RESULT(mc, OP_TYPE, LLVM_OP_NAME);                           \
+      mc->shadow = __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME( \
+        ma->shadow, mb->shadow);                                               \
+      double t_of_t = mpfr_get_##MPFR_GET(mc->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE); \
+      double r_of_t = __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME( \
+        mpfr_get_##MPFR_GET(ma->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE),           \
+        mpfr_get_##MPFR_GET(mb->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE));          \
+      mpfr_t ra, rb, rc;                                                       \
+      mpfr_init2(ra, significand);                                             \
+      mpfr_init2(rb, significand);                                             \
+      mpfr_init2(rc, significand);                                             \
+      mpfr_set_##MPFR_SET_ARG1(ra, ma->shadow, ROUNDING_MODE);                 \
+      mpfr_set_##MPFR_SET_ARG2(rb, mb->shadow, ROUNDING_MODE);                 \
+      mpfr_##MPFR_FUNC_NAME(rc, ra, rb, ROUNDING_MODE);                        \
+      double t_of_r = mpfr_get_##MPFR_GET(rc, ROUNDING_MODE);                  \
+      mpfr_clear(ra);                                                          \
+      mpfr_clear(rb);                                                          \
+      mpfr_clear(rc);                                                          \
+      double err_op = __enzyme_fprt_64_52_abs_err(t_of_t, r_of_t);             \
+      double err_ac = __enzyme_fprt_64_52_abs_err(t_of_t, mc->shadow);         \
+      double err_tr = __enzyme_fprt_64_52_abs_err(t_of_r, mc->shadow);         \
+      if (!opdata[loc].count) {                                                \
+        opdata[loc].op = #LLVM_OP_NAME;                                        \
+      }                                                                        \
+      ++opdata[loc].count;                                                     \
+      opdata[loc].mean_op = (opdata[loc].mean_op + err_op) / 2.0;              \
+      opdata[loc].sqmean_op = (opdata[loc].sqmean_op + err_op*err_op) / 2.0;   \
+      opdata[loc].mean_ac = (opdata[loc].mean_ac + err_ac) / 2.0;              \
+      opdata[loc].sqmean_ac = (opdata[loc].sqmean_ac + err_ac*err_ac) / 2.0;   \
+      opdata[loc].mean_tr = (opdata[loc].mean_tr + err_tr) / 2.0;              \
+      opdata[loc].sqmean_tr = (opdata[loc].sqmean_tr + err_tr*err_tr) / 2.0;   \
       return __enzyme_fprt_ptr_to_double(mc);                                  \
     } else {                                                                   \
       abort();                                                                 \
@@ -207,6 +381,8 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
 
 #define __ENZYME_MPFR_FMULADD(LLVM_OP_NAME, FROM_TYPE, TYPE, MPFR_TYPE,        \
                               LLVM_TYPE, ROUNDING_MODE)                        \
+  __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                            \
+  TYPE __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(TYPE a, TYPE b, TYPE c); \
   __ENZYME_MPFR_ATTRIBUTES                                                     \
   TYPE __enzyme_fprt_##FROM_TYPE##_intr_##LLVM_OP_NAME##_##LLVM_TYPE(          \
       TYPE a, TYPE b, TYPE c, int64_t exponent, int64_t significand,           \
@@ -231,16 +407,60 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(madd);                                                        \
       return res;                                                              \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
-      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
-      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr(b);                        \
-      __enzyme_fp *mc = __enzyme_fprt_double_to_ptr(c);                        \
-      double mmul = __enzyme_fprt_##FROM_TYPE##_binop_fmul(                    \
-          __enzyme_fprt_ptr_to_double(ma), __enzyme_fprt_ptr_to_double(mb),    \
-          exponent, significand, mode, loc);                                   \
-      double madd = __enzyme_fprt_##FROM_TYPE##_binop_fadd(                    \
-          mmul, __enzyme_fprt_ptr_to_double(mc), exponent, significand, mode,  \
-          loc);                                                                \
-      return madd;                                                             \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr_checked(                   \
+          a, exponent, significand, mode, loc);                                \
+      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr_checked(                   \
+          b, exponent, significand, mode, loc);                                \
+      __enzyme_fp *mc = __enzyme_fprt_double_to_ptr_checked(                   \
+          c, exponent, significand, mode, loc);                                \
+      ENZYME_DUMP_INPUT(ma, OP_TYPE, LLVM_OP_NAME);                            \
+      ENZYME_DUMP_INPUT(mb, OP_TYPE, LLVM_OP_NAME);                            \
+      ENZYME_DUMP_INPUT(mc, OP_TYPE, LLVM_OP_NAME);                            \
+      mpfr_t mmul;                                                             \
+      __enzyme_fp *madd = __enzyme_fprt_64_52_new_intermediate(                \
+        exponent, significand, mode, loc);                                     \
+      mpfr_init2(mmul, significand);                                           \
+      mpfr_mul(mmul, ma->result, mb->result, ROUNDING_MODE);                   \
+      mpfr_add(madd->result, mmul, mc->result, ROUNDING_MODE);                 \
+      mpfr_clear(mmul);                                                        \
+      ENZYME_DUMP_RESULT(__enzyme_fprt_double_to_ptr(madd), OP_TYPE,           \
+                         LLVM_OP_NAME);                                        \
+      madd->shadow = ma->shadow * mb->shadow + mc->shadow;                     \
+      double t_of_t = mpfr_get_##MPFR_TYPE(madd->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE); \
+      double r_of_t = mpfr_get_##MPFR_TYPE(ma->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE) * \
+        mpfr_get_##MPFR_TYPE(mb->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE) +          \
+        mpfr_get_##MPFR_TYPE(mc->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);           \
+      mpfr_t ra, rb, rc, rmul, radd;                                           \
+      mpfr_init2(ra, significand);                                             \
+      mpfr_init2(rb, significand);                                             \
+      mpfr_init2(rc, significand);                                             \
+      mpfr_init2(rmul, significand);                                           \
+      mpfr_init2(radd, significand);                                           \
+      mpfr_set_##MPFR_TYPE(ra, ma->shadow, ROUNDING_MODE);                     \
+      mpfr_set_##MPFR_TYPE(rb, mb->shadow, ROUNDING_MODE);                     \
+      mpfr_set_##MPFR_TYPE(rc, mc->shadow, ROUNDING_MODE);                     \
+      mpfr_mul(rmul, ra, rb, ROUNDING_MODE);                                   \
+      mpfr_add(radd, rmul, rc, ROUNDING_MODE);                                 \
+      double t_of_r = mpfr_get_##MPFR_TYPE(radd, ROUNDING_MODE);               \
+      mpfr_clear(ra);                                                          \
+      mpfr_clear(rb);                                                          \
+      mpfr_clear(rc);                                                          \
+      mpfr_clear(rmul);                                                        \
+      mpfr_clear(radd);                                                        \
+      double err_op = __enzyme_fprt_64_52_abs_err(t_of_t, r_of_t);             \
+      double err_ac = __enzyme_fprt_64_52_abs_err(t_of_t, madd->shadow);       \
+      double err_tr = __enzyme_fprt_64_52_abs_err(t_of_r, madd->shadow);       \
+      if (!opdata[loc].count) {                                                \
+        opdata[loc].op = #LLVM_OP_NAME;                                        \
+      }                                                                        \
+      ++opdata[loc].count;                                                     \
+      opdata[loc].mean_op = (opdata[loc].mean_op + err_op) / 2.0;              \
+      opdata[loc].sqmean_op = (opdata[loc].sqmean_op + err_op*err_op) / 2.0;   \
+      opdata[loc].mean_ac = (opdata[loc].mean_ac + err_ac) / 2.0;              \
+      opdata[loc].sqmean_ac = (opdata[loc].sqmean_ac + err_ac*err_ac) / 2.0;   \
+      opdata[loc].mean_tr = (opdata[loc].mean_tr + err_tr) / 2.0;              \
+      opdata[loc].sqmean_tr = (opdata[loc].sqmean_tr + err_tr*err_tr) / 2.0;   \
+      return __enzyme_fprt_ptr_to_double(madd);                                \
     } else {                                                                   \
       abort();                                                                 \
     }                                                                          \
@@ -264,9 +484,11 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(mb);                                                          \
       return ret CMP;                                                          \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
-      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
-      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr(b);                        \
-      int ret = mpfr_cmp(ma->v, mb->v);                                        \
+      __enzyme_fp *ma = __enzyme_fprt_double_to_ptr_checked(                   \
+          a, exponent, significand, mode, loc);                                \
+      __enzyme_fp *mb = __enzyme_fprt_double_to_ptr_checked(                   \
+          b, exponent, significand, mode, loc);                                \
+      int ret = mpfr_cmp(ma->result, mb->result);                              \
       return ret CMP;                                                          \
     } else {                                                                   \
       abort();                                                                 \

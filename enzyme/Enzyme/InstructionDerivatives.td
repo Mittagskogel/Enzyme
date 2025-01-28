@@ -124,12 +124,19 @@ class InsertValue<list<int> indices_> : Inst<"InsertValue"> {
 
 class MultiReturn : Operation</*primal*/1,/*shadow*/0> {
   bit struct;
+  bit useRetType;
+}
+def RetMultiReturnRet : MultiReturn {
+  bit struct = 0;
+  bit useRetType = 1;
 }
 def StructRet : MultiReturn {
   bit struct = 1;
+  bit useRetType = 0;
 }
 def ArrayRet : MultiReturn {
   bit struct = 0;
+  bit useRetType = 0;
 }
 
 def CFAdd : SubRoutine<(Op (Op $re1, $im1):$z1, (Op $re2, $im2):$z2),
@@ -244,6 +251,10 @@ def MantissaMaskOfReturnForFrexp : GlobalExpr</*primal*/0, /*shadow*/0, [{
     // x86_fp80 has only 15 exponent bits, but we must also
     // retain the most-significant bit of the mantissa as
     // there is no implicit leading
+  } else if (ty->isBFloatTy()) {
+    tsize = 16;
+    high = tsize - 1;
+    low = high - 8;
   } else if (ty->isFP128Ty()) {
     tsize = 128;
     high = tsize - 1;
@@ -315,7 +326,7 @@ def : CallPattern<(Op $x),
                   >;
 
 def : CallPattern<(Op $x, $y),
-                  ["hypot", "hypotf", "hypotl"],
+                  ["hypot", "hypotf", "hypotl", "__hypot_finite"],
                   [
                     (FDiv (FMul (DiffeRet), $x), (Call<(SameFunc), [ReadNone,NoUnwind]> $x, $y)),
                     (FDiv (FMul (DiffeRet), $y), (Call<(SameFunc), [ReadNone,NoUnwind]> $x, $y))
@@ -398,6 +409,13 @@ def : CallPattern<(Op $x),
 def : CallPattern<(Op $x),
                   ["atanh", "atanhf", "atanhl", "__nv_atanh", "__nv_atanhf"],
                   [(FDiv (DiffeRet), (FSub (ConstantFP<"1.0"> $x), (FMul $x, $x))  )] ,
+                  (ForwardFromSummedReverse),
+                  [ReadNone, NoUnwind]
+                  >;
+
+def : CallPattern<(Op $x),
+                  ["__nv_fast_expf"],
+                  [(FMul (DiffeRet), (Call<(SameFunc), [ReadNone,NoUnwind]> $x) )],
                   (ForwardFromSummedReverse),
                   [ReadNone, NoUnwind]
                   >;
@@ -528,6 +546,19 @@ def : CallPattern<(Op $x),
                   [ReadNone, NoUnwind]
                   >;
 
+def : CallPattern<(Op $x, $y),
+                  ["xlogy_jl"],
+                  [
+                    (FMul (Intrinsic<"log"> $y), (DiffeRet)),
+                    (Select (FCmpOEQ $x, (ConstantFP<"0"> $x)),
+                        (ConstantFP<"0"> $x),
+                        (FMul (FDiv $x, $y), (DiffeRet))
+                    )
+                  ],
+                  (ForwardFromSummedReverse),
+                  [ReadNone, NoUnwind]
+                  >;
+
 def : CallPattern<(Op $x),
                   ["logabsgamma"],
                   [
@@ -650,7 +681,7 @@ def : CallPattern<(Op $x),
                   >;
 
 def ToStruct2 : SubRoutine<(Op (Op $re, $im):$z),
-                    (StructRet $re, $im)
+                    (RetMultiReturnRet $re, $im)
                   >;
 def : CallPattern<(Op $x, $tbd),
                   ["Faddeeva_erf"],
@@ -1032,7 +1063,7 @@ def : InstPattern<(Op $x), "Freeze", 10, 0,
                     [
                       (Freeze (DiffeRet)),
                     ],
-                    (ForwardFromSummedReverse)
+                    (Freeze (Shadow $x))
                   >;
 
 include "BlasDerivatives.td"                  

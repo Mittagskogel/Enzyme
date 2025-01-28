@@ -17,6 +17,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
@@ -195,7 +196,7 @@ struct VariableSetting {
   StringMap<std::vector<int>> extractions;
 
   std::tuple<std::string, bool, std::vector<int>>
-  lookup(StringRef name, Record *pattern, Init *resultRoot) {
+  lookup(StringRef name, const Record *pattern, Init *resultRoot) {
     auto ord = nameToOrdinal.find(name);
     if (ord == nameToOrdinal.end())
       PrintFatalError(pattern->getLoc(), Twine("unknown named operand '") +
@@ -218,13 +219,13 @@ struct VariableSetting {
 
 #define INDENT "  "
 bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
-            Record *pattern, Init *resultTree, StringRef builder,
+            const Record *pattern, Init *resultTree, StringRef builder,
             VariableSetting &nameToOrdinal, bool lookup,
             ArrayRef<unsigned> retidx, StringRef origName, bool newFromOriginal,
             ActionType intrinsic);
 
 SmallVector<bool, 1> prepareArgs(const Twine &curIndent, raw_ostream &os,
-                                 const Twine &argName, Record *pattern,
+                                 const Twine &argName, const Record *pattern,
                                  DagInit *resultRoot, StringRef builder,
                                  VariableSetting &nameToOrdinal, bool lookup,
                                  ArrayRef<unsigned> retidx, StringRef origName,
@@ -242,7 +243,10 @@ SmallVector<bool, 1> prepareArgs(const Twine &curIndent, raw_ostream &os,
       if (!vecValue && !startsWith(ord, "local")) {
 
         if (ext.size()) {
-          os << "gutils->extractMeta(" << builder << ", ";
+          if (!lookup)
+            os << "gutils->extractMeta(" << builder << ", ";
+          else
+            os << builder << ".CreateExtractValue(";
         }
 
         if (lookup && intrinsic != MLIRDerivatives)
@@ -296,7 +300,7 @@ SmallVector<bool, 1> prepareArgs(const Twine &curIndent, raw_ostream &os,
 
 // Returns whether value generated is a vector value or not.
 bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
-            Record *pattern, Init *resultTree, StringRef builder,
+            const Record *pattern, Init *resultTree, StringRef builder,
             VariableSetting &nameToOrdinal, bool lookup,
             ArrayRef<unsigned> retidx, StringRef origName, bool newFromOriginal,
             ActionType intrinsic) {
@@ -477,6 +481,46 @@ bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
       }
 
       os << curIndent << INDENT << "imVal;\n";
+      os << curIndent << "})";
+      return true;
+    } else if (opName == "ConjIfComplex" ||
+               Def->isSubClassOf("ConjIfComplex")) {
+      if (resultRoot->getNumArgs() != 1)
+        PrintFatalError(pattern->getLoc(),
+                        "only three op ConjIfComplex supported");
+
+      os << "({\n";
+      os << curIndent << INDENT << "// Computing ConjIfComplex\n";
+      if (intrinsic == MLIRDerivatives)
+        os << curIndent << INDENT << "mlir::Value imVal";
+      else
+        os << curIndent << INDENT << "llvm::Value *imVal";
+
+      os << curIndent << INDENT << "if (!gutils->isConstantValue(";
+
+      if (isa<UnsetInit>(resultRoot->getArg(0)) && resultRoot->getArgName(0)) {
+        auto name = resultRoot->getArgName(0)->getAsUnquotedString();
+        auto [ord, isVec, ext] =
+            nameToOrdinal.lookup(name, pattern, resultRoot);
+        os << ord;
+        assert(!ext.size());
+        os << ord;
+        os << ";\n";
+      } else {
+        handle(curIndent + INDENT + INDENT, argPattern + "_cic", os, pattern,
+               resultRoot->getArg(0), builder, nameToOrdinal, lookup, retidx,
+               origName, newFromOriginal, intrinsic);
+        os << ";\n";
+      }
+
+      os << " (isa<ComplexType>(imVal.getType()) || "
+            "(isa<TensorType>(imVal.getType()) && "
+            "isa<ComplexType>(cast<TensorType>(imVal.getType()).getElementType("
+            ")))) ? ";
+      os << builder << ".create<"
+         << cast<StringInit>(Def->getValueInit("dialect"))->getValue()
+         << "::" << cast<StringInit>(Def->getValueInit("opName"))->getValue()
+         << ">(op.getLoc(), imVal.getType(), imVal) : imVal;\n";
       os << curIndent << "})";
       return true;
     } else if (opName == "ConstantFP" || Def->isSubClassOf("ConstantFP")) {
@@ -741,6 +785,7 @@ bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
       os << "({\n";
 
       bool useStruct = Def->getValueAsBit("struct");
+      bool useRetType = Def->getValueAsBit("useRetType");
 
       SmallVector<bool, 1> vectorValued = prepareArgs(
           curIndent + INDENT, os, argPattern, pattern, resultRoot, builder,
@@ -756,25 +801,29 @@ bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
       if (anyVector)
         os << "gutils->getShadowType(";
 
-      if (useStruct)
-        os << "StructType::get(gutils->newFunc->getContext(), "
-              "std::vector<llvm::Type*>({";
-      else
-        os << "ArrayType::get(";
-      for (size_t i = 0; i < (useStruct ? vectorValued.size() : 1); i++) {
-        if (i != 0)
-          os << ", ";
-        if (!vectorValued[i])
-          os << argPattern << "_" << i << "->getType()";
+      if (useRetType) {
+        os << (origName == "<ILLEGAL>" ? "call" : origName) << ".getType()";
+      } else {
+        if (useStruct)
+          os << "StructType::get(gutils->newFunc->getContext(), "
+                "std::vector<llvm::Type*>({";
         else
-          os << "(gutils->getWidth() == 1) ? " << argPattern << "_" << i
-             << "->getType() : getSubType(" << argPattern << "_" << i
-             << "->getType(), -1)";
+          os << "ArrayType::get(";
+        for (size_t i = 0; i < (useStruct ? vectorValued.size() : 1); i++) {
+          if (i != 0)
+            os << ", ";
+          if (!vectorValued[i])
+            os << argPattern << "_" << i << "->getType()";
+          else
+            os << "(gutils->getWidth() == 1) ? " << argPattern << "_" << i
+               << "->getType() : getSubType(" << argPattern << "_" << i
+               << "->getType(), -1)";
+        }
+        if (useStruct)
+          os << "}))";
+        else
+          os << ", " << vectorValued.size() << ")";
       }
-      if (useStruct)
-        os << "}))";
-      else
-        os << ", " << vectorValued.size() << ")";
 
       if (anyVector)
         os << ")";
@@ -858,7 +907,7 @@ bool handle(const Twine &curIndent, const Twine &argPattern, raw_ostream &os,
                   os << curIndent << INDENT << "Value* local_"
                      << ptree->getArgNameStr(i) << " = ";
                   if (!vectorValued[next[0]]) {
-                    os << "gutils->extractMeta(" << builder << ", " << op
+                    os << builder << ".CreateExtractValue(" << op
                        << ", ArrayRef<unsigned>({";
                     for (unsigned i = 1; i < next.size(); i++) {
                       if (i != 1)
@@ -1356,10 +1405,9 @@ void printDiffUse(
   }
 }
 
-static void emitMLIRReverse(raw_ostream &os, Record *pattern, DagInit *tree,
-                            ActionType intrinsic, StringRef origName,
-                            ListInit *argOps) {
-
+static void emitMLIRReverse(raw_ostream &os, const Record *pattern,
+                            DagInit *tree, ActionType intrinsic,
+                            StringRef origName, ListInit *argOps) {
   auto opName = pattern->getValueAsString("opName");
   auto dialect = pattern->getValueAsString("dialect");
   os << "struct " << opName << "RevDerivative : \n";
@@ -1473,9 +1521,9 @@ static VariableSetting parseVariables(DagInit *tree, ActionType intrinsic,
   return nameToOrdinal;
 }
 
-static void emitReverseCommon(raw_ostream &os, Record *pattern, DagInit *tree,
-                              ActionType intrinsic, StringRef origName,
-                              ListInit *argOps) {
+static void emitReverseCommon(raw_ostream &os, const Record *pattern,
+                              DagInit *tree, ActionType intrinsic,
+                              StringRef origName, ListInit *argOps) {
   auto nameToOrdinal = parseVariables(tree, intrinsic, origName);
 
   bool seen = false;
@@ -1513,12 +1561,16 @@ static void emitReverseCommon(raw_ostream &os, Record *pattern, DagInit *tree,
          << "->getOperand(" << argIdx << "))) {\n";
     } else {
       os << "if (!dif && !gutils->isConstantValue(" << origName
-         << ".getOperand(" << argIdx << "))) {\n";
+         << ".getOperand(" << argIdx << ")) && !isa<PointerType>(" << origName
+         << ".getOperand(" << argIdx << ")->getType()) ) {\n";
     }
     DagInit *resultTree = cast<DagInit>(argOpEn.value());
     if (hasDiffeRet(resultTree)) {
       if (intrinsic == MLIRDerivatives) {
         os << "          dif = gutils->diffe(" << origName << ", builder);\n";
+        os << "          dif = "
+              "cast<AutoDiffTypeInterface>(dif.getType()).createConjOp(builder,"
+              " dif.getLoc(), dif);\n";
         os << "          gutils->zeroDiffe(" << origName << ", builder);\n";
       } else {
         os << "          dif = diffe(&" << origName << ", Builder2);\n";
@@ -1575,6 +1627,13 @@ static void emitReverseCommon(raw_ostream &os, Record *pattern, DagInit *tree,
               nameToOrdinal, /*lookup*/ true, idx, origName,
               /*newFromOriginal*/ true, intrinsic);
           os << ";\n";
+
+          if (intrinsic == MLIRDerivatives) {
+            os << curIndent << INDENT
+               << "tmp = "
+                  "tmp.getType().cast<AutoDiffTypeInterface>().createConjOp("
+                  "builder, op.getLoc(), tmp);\n";
+          }
 
           if (intrinsic == MLIRDerivatives) {
             os << "assert(toadd == nullptr); toadd = tmp;\n";
@@ -1635,7 +1694,9 @@ static void emitReverseCommon(raw_ostream &os, Record *pattern, DagInit *tree,
          << "->getOperand(" << argIdx << "))) {\n";
     else
       os << curIndent << "if (!gutils->isConstantValue(" << origName
-         << ".getOperand(" << argIdx << "))) {\n";
+         << ".getOperand(" << argIdx << ")) && !isa<PointerType>(" << origName
+         << ".getOperand(" << argIdx << ")->getType()) ) {\n";
+
     initializeNames(Twine(curIndent) + INDENT, os, argOpEn.value(), "local");
     if (intrinsic == MLIRDerivatives)
       os << curIndent << INDENT << "mlir::Value toadd = nullptr;\n";
@@ -1684,7 +1745,7 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
   }
   const auto &patterns = recordKeeper.getAllDerivedDefinitions(patternNames);
 
-  for (Record *pattern : patterns) {
+  for (const Record *pattern : patterns) {
     DagInit *tree = pattern->getValueAsDag("PatternToMatch");
 
     DagInit *duals = pattern->getValueAsDag("ArgDuals");
@@ -1726,10 +1787,17 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
       bool prev = false;
       for (auto *nameI :
            *cast<ListInit>(pattern->getValueAsListInit("names"))) {
-        if (prev)
-          os << " ||\n      ";
-        os << "funcName == " << cast<StringInit>(nameI)->getAsString() << "";
-        prev = true;
+        auto nameIStr = cast<StringInit>(nameI)->getAsString();
+        auto nameIStrFinite = "\"__" +
+                              std::string(std::next(nameIStr.begin()),
+                                          std::prev(nameIStr.end())) +
+                              "_finite\"";
+        for (auto nameIStrAll : {nameIStr, nameIStrFinite}) {
+          if (prev)
+            os << " ||\n      ";
+          os << "funcName == " << nameIStrAll << "";
+          prev = true;
+        }
       }
       origName = "call";
 #if LLVM_VERSION_MAJOR >= 14
@@ -1880,7 +1948,8 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
       os << "    if (gutils->isConstantInstruction(op))\n";
       os << "      return success();\n";
     } else {
-      os << "    if (gutils->isConstantInstruction(&" << origName << "))\n";
+      os << "    if (gutils->isConstantInstruction(&" << origName
+         << ") && gutils->isConstantValue(&" << origName << "))\n";
       if (intrinsic == IntrDerivatives || intrinsic == CallDerivatives)
         os << "      return true;\n";
       else
@@ -2169,6 +2238,91 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
          << origName << ")), res);\n";
 
       os << "        assert(res);\n";
+
+      // Insert logging function call (optional)
+      os << "        Function *logFunc = " << origName
+         << ".getModule()->getFunction(\"enzymeLogError\");\n";
+      os << "        if (logFunc) {\n"
+         << "            std::string moduleName = " << origName
+         << ".getModule()->getModuleIdentifier() ;\n"
+         << "            std::string functionName = " << origName
+         << ".getFunction()->getName().str();\n"
+         << "            std::string blockName = " << origName
+         << ".getParent()->getName().str();\n"
+         << "            int funcIdx = -1, blockIdx = -1, instIdx = -1;\n"
+         << "            auto funcIt = std::find_if(" << origName
+         << ".getModule()->begin(), " << origName
+         << ".getModule()->end(),\n"
+            "              [&](const auto& func) { return &func == "
+         << origName
+         << ".getFunction(); });\n"
+            "            if (funcIt != "
+         << origName
+         << ".getModule()->end()) {\n"
+            "              funcIdx = "
+            "std::distance("
+         << origName << ".getModule()->begin(), funcIt);\n"
+         << "            }\n"
+         << "            auto blockIt = std::find_if(" << origName
+         << ".getFunction()->begin(), " << origName
+         << ".getFunction()->end(),\n"
+            "              [&](const auto& block) { return &block == "
+         << origName
+         << ".getParent(); });\n"
+            "            if (blockIt != "
+         << origName
+         << ".getFunction()->end()) {\n"
+            "              blockIdx = std::distance("
+         << origName << ".getFunction()->begin(), blockIt);\n"
+         << "            }\n"
+         << "            auto instIt = std::find_if(" << origName
+         << ".getParent()->begin(), " << origName
+         << ".getParent()->end(),\n"
+            "              [&](const auto& curr) { return &curr == &"
+         << origName
+         << "; });\n"
+            "            if (instIt != "
+         << origName
+         << ".getParent()->end()) {\n"
+            "              instIdx = std::distance("
+         << origName << ".getParent()->begin(), instIt);\n"
+         << "            }\n"
+         << "            Value *origValue = "
+            "Builder2.CreateFPExt(gutils->getNewFromOriginal(&"
+         << origName << "), Type::getDoubleTy(" << origName
+         << ".getContext()));\n"
+         << "            Value *errValue = Builder2.CreateFPExt(res, "
+            "Type::getDoubleTy("
+         << origName << ".getContext()));\n"
+         << "            std::string opcodeName = " << origName
+         << ".getOpcodeName();\n"
+         << "            std::string calleeName = \"<N/A>\";\n"
+         << "            if (auto CI = dyn_cast<CallInst>(&" << origName
+         << ")) {\n"
+         << "                if (Function *fn = CI->getCalledFunction()) {\n"
+         << "                    calleeName = fn->getName();\n"
+         << "                } else {\n"
+         << "                    calleeName = \"<Unknown>\";\n"
+         << "                }\n"
+         << "            }\n"
+         << "            Value *moduleNameValue = "
+            "Builder2.CreateGlobalStringPtr(moduleName);\n"
+         << "            Value *functionNameValue = "
+            "Builder2.CreateGlobalStringPtr(functionName + \" (\" +"
+            "std::to_string(funcIdx) + \")\");\n"
+         << "            Value *blockNameValue = "
+            "Builder2.CreateGlobalStringPtr(blockName + \" (\" +"
+            "std::to_string(blockIdx) + \")\");\n"
+         << "            Value *opcodeNameValue = "
+            "Builder2.CreateGlobalStringPtr(opcodeName + \" (\" "
+            "+std::to_string(instIdx) + \")\");\n"
+         << "            Value *calleeNameValue = "
+            "Builder2.CreateGlobalStringPtr(calleeName);\n"
+         << "            Builder2.CreateCall(logFunc, {origValue, "
+            "errValue, opcodeNameValue, calleeNameValue, moduleNameValue, "
+            "functionNameValue, blockNameValue});\n"
+         << "        }\n";
+
       os << "        setDiffe(&" << origName << ", res, Builder2);\n";
       os << "        break;\n";
       os << "      }\n";
@@ -2190,8 +2344,28 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
     if (intrinsic != MLIRDerivatives) {
       os << "        auto found = gutils->invertedPointers.find(&(" << origName
          << "));\n";
-      os << "        if (found != gutils->invertedPointers.end()) {\n";
-      os << "          PHINode* PN = cast<PHINode>(&*found->second);\n";
+      os << "        if (found != gutils->invertedPointers.end() && "
+            "!isa<PointerType>("
+         << origName << ".getType())) {\n";
+      os << "          PHINode* PN = dyn_cast<PHINode>(&*found->second);\n";
+      os << "          if (!PN) {\n";
+      os << "            std::string str;\n";
+      os << "            raw_string_ostream ss(str);\n";
+      os << "            ss << \"Shadow of instruction is not phi:\\n\";\n";
+      os << "            ss << *gutils->oldFunc << \"\\n\";\n";
+      os << "            ss << *gutils->newFunc << \"\\n\";\n";
+      os << "            ss << \"orig: \" << " << origName << " << \"\\n\";\n";
+      os << "            ss << \"found: \" << *found->second << \"\\n\";\n";
+      os << "            if (CustomErrorHandler) {\n";
+      os << "              CustomErrorHandler(str.c_str(), wrap(&(" << origName
+         << ")), ErrorType::InternalError,\n";
+      os << "                                 nullptr, nullptr, nullptr);\n";
+      os << "            } else {\n";
+      os << "              EmitFailure(\"PHIError\", (" << origName
+         << ").getDebugLoc(), &(" << origName << "), ss.str());\n";
+      os << "            }\n";
+      os << "          }\n";
+      os << "          assert(PN);\n";
       os << "          gutils->invertedPointers.erase(found);\n";
       os << "          gutils->erase(PN);\n";
       os << "        }\n";
@@ -2201,8 +2375,28 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
       os << "      case DerivativeMode::ReverseModePrimal:{\n";
       os << "        auto found = gutils->invertedPointers.find(&(" << origName
          << "));\n";
-      os << "        if (found != gutils->invertedPointers.end()) {\n";
-      os << "          PHINode* PN = cast<PHINode>(&*found->second);\n";
+      os << "        if (found != gutils->invertedPointers.end() && "
+            "!isa<PointerType>("
+         << origName << ".getType())) {\n";
+      os << "          PHINode* PN = dyn_cast<PHINode>(&*found->second);\n";
+      os << "          if (!PN) {\n";
+      os << "            std::string str;\n";
+      os << "            raw_string_ostream ss(str);\n";
+      os << "            ss << \"Shadow of instruction is not phi:\\n\";\n";
+      os << "            ss << *gutils->oldFunc << \"\\n\";\n";
+      os << "            ss << *gutils->newFunc << \"\\n\";\n";
+      os << "            ss << \"orig: \" << " << origName << " << \"\\n\";\n";
+      os << "            ss << \"found: \" << *found->second << \"\\n\";\n";
+      os << "            if (CustomErrorHandler) {\n";
+      os << "              CustomErrorHandler(str.c_str(), wrap(&(" << origName
+         << ")), ErrorType::InternalError,\n";
+      os << "                                 nullptr, nullptr, nullptr);\n";
+      os << "            } else {\n";
+      os << "              EmitFailure(\"PHIError\", (" << origName
+         << ").getDebugLoc(), &(" << origName << "), ss.str());\n";
+      os << "            }\n";
+      os << "          }\n";
+      os << "          assert(PN);\n";
       os << "          gutils->invertedPointers.erase(found);\n";
       os << "          gutils->erase(PN);\n";
       os << "        }\n";
@@ -2309,7 +2503,7 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
         recordKeeper.getAllDerivedDefinitions("AllocationOp");
 
     os << "void registerInterfaces(MLIRContext* context) {\n";
-    for (Record *pattern : patterns) {
+    for (const Record *pattern : patterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  " << dialect << "::" << opName << "::attachInterface<" << opName
@@ -2317,13 +2511,13 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
       os << "  " << dialect << "::" << opName << "::attachInterface<" << opName
          << "RevDerivative>(*context);\n";
     }
-    for (Record *pattern : actpatterns) {
+    for (const Record *pattern : actpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  " << dialect << "::" << opName << "::attachInterface<" << opName
          << "Activity>(*context);\n";
     }
-    for (Record *pattern : cfpatterns) {
+    for (const Record *pattern : cfpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  " << dialect << "::" << opName << "::attachInterface<" << opName
@@ -2331,7 +2525,7 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
       os << "  registerAutoDiffUsingControlFlowInterface<" << dialect
          << "::" << opName << ">(*context);\n";
     }
-    for (Record *pattern : mempatterns) {
+    for (const Record *pattern : mempatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  " << dialect << "::" << opName << "::attachInterface<" << opName
@@ -2347,25 +2541,25 @@ static void emitDerivatives(const RecordKeeper &recordKeeper, raw_ostream &os,
            << opName << "RevDerivative>(*context);\n";
       }
     }
-    for (Record *pattern : brpatterns) {
+    for (const Record *pattern : brpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  registerAutoDiffUsingBranchInterface<" << dialect
          << "::" << opName << ">(*context);\n";
     }
-    for (Record *pattern : regtpatterns) {
+    for (const Record *pattern : regtpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  registerAutoDiffUsingRegionTerminatorInterface<" << dialect
          << "::" << opName << ">(*context);\n";
     }
-    for (Record *pattern : retpatterns) {
+    for (const Record *pattern : retpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  registerAutoDiffUsingReturnInterface<" << dialect
          << "::" << opName << ">(*context);\n";
     }
-    for (Record *pattern : allocpatterns) {
+    for (const Record *pattern : allocpatterns) {
       auto opName = pattern->getValueAsString("opName");
       auto dialect = pattern->getValueAsString("dialect");
       os << "  registerAutoDiffUsingAllocationInterface<" << dialect
@@ -2401,7 +2595,7 @@ void emitDiffUse(const RecordKeeper &recordKeeper, raw_ostream &os,
   }
   const auto &patterns = recordKeeper.getAllDerivedDefinitions(patternNames);
 
-  for (Record *pattern : patterns) {
+  for (const Record *pattern : patterns) {
     DagInit *tree = pattern->getValueAsDag("PatternToMatch");
 
     // Emit RewritePattern for Pattern.

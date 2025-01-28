@@ -30,6 +30,7 @@
 #include <set>
 
 #include "DifferentialUseAnalysis.h"
+#include "Utils.h"
 
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Instruction.h"
@@ -147,7 +148,8 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
               (mode == DerivativeMode::ForwardModeSplit && backwardsShadow) ||
               (mode == DerivativeMode::ReverseModeCombined &&
                (forwardsShadow || backwardsShadow)) ||
-              mode == DerivativeMode::ForwardMode))
+              mode == DerivativeMode::ForwardMode ||
+              mode == DerivativeMode::ForwardModeError))
           return false;
       } else {
         // Likewise, if not rematerializing in reverse pass, you
@@ -162,7 +164,8 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
                 (mode == DerivativeMode::ForwardModeSplit && backwardsShadow) ||
                 (mode == DerivativeMode::ReverseModeCombined &&
                  (forwardsShadow || backwardsShadow)) ||
-                mode == DerivativeMode::ForwardMode))
+                mode == DerivativeMode::ForwardMode ||
+                mode == DerivativeMode::ForwardModeError))
             return false;
         }
       }
@@ -181,7 +184,7 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
 
   if (!shadow)
     if (auto LI = dyn_cast<LoadInst>(user)) {
-      if (EnzymeRuntimeActivityCheck) {
+      if (gutils->runtimeActivity) {
         auto vd = TR.query(const_cast<llvm::Instruction *>(user));
         if (!vd.isKnown()) {
           auto ET = LI->getType();
@@ -477,7 +480,9 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
 
     // Even though inactive, keep the shadow pointer around in forward mode
     // to perform the same memory free behavior on the shadow.
-    if (shadow && mode == DerivativeMode::ForwardMode &&
+    if (shadow &&
+        (mode == DerivativeMode::ForwardMode ||
+         mode == DerivativeMode::ForwardModeError) &&
         isDeallocationFunction(funcName, gutils->TLI)) {
       if (EnzymePrintDiffUse)
         llvm::errs() << " Need: shadow of " << *val
@@ -519,6 +524,15 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
     }
 
     if (!shadow) {
+
+      // Need the primal request in reverse.
+      if (funcName == "cuStreamSynchronize")
+        if (val == CI->getArgOperand(0)) {
+          if (EnzymePrintDiffUse)
+            llvm::errs() << " Need: primal(" << to_string(qtype) << ") of "
+                         << *val << " in reverse for cuda sync " << *CI << "\n";
+          return true;
+        }
 
       // Only need the primal request.
       if (funcName == "MPI_Wait" || funcName == "PMPI_Wait")
@@ -580,11 +594,7 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
         return true;
       }
       if (shadow) {
-#if LLVM_VERSION_MAJOR >= 14
         auto sz = CI->arg_size();
-#else
-        auto sz = CI->getNumArgOperands();
-#endif
         bool isStored = false;
         // First pointer is the destination
         for (size_t i = 1; i < sz; i++)
@@ -614,12 +624,7 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
     if (shouldDisableNoWrite(CI)) {
       writeOnlyNoCapture = false;
     }
-#if LLVM_VERSION_MAJOR >= 14
-    for (size_t i = 0; i < CI->arg_size(); i++)
-#else
-    for (size_t i = 0; i < CI->getNumArgOperands(); i++)
-#endif
-    {
+    for (size_t i = 0; i < CI->arg_size(); i++) {
       if (val == CI->getArgOperand(i)) {
         if (!isNoCapture(CI, i)) {
           writeOnlyNoCapture = false;
@@ -661,8 +666,8 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
 
   if (shadow) {
     if (isa<ReturnInst>(user)) {
-      if (gutils->ATA->ActiveReturns == DIFFE_TYPE::DUP_ARG ||
-          gutils->ATA->ActiveReturns == DIFFE_TYPE::DUP_NONEED) {
+      bool notrev = mode != DerivativeMode::ReverseModeGradient;
+      if (gutils->shadowReturnUsed && notrev) {
 
         bool inst_cv = gutils->isConstantValue(const_cast<Value *>(val));
 
@@ -682,6 +687,7 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
     // shadow of the operand.
     if (mode == DerivativeMode::ForwardMode ||
         mode == DerivativeMode::ForwardModeSplit ||
+        mode == DerivativeMode::ForwardModeError ||
         (!isa<ExtractValueInst>(user) && !isa<ExtractElementInst>(user) &&
          !isa<InsertValueInst>(user) && !isa<InsertElementInst>(user) &&
          !isPointerArithmeticInst(user, /*includephi*/ false,
@@ -716,8 +722,13 @@ bool DifferentialUseAnalysis::is_use_directly_needed_in_reverse(
     return false;
   }
 
-  bool neededFB = !gutils->isConstantInstruction(user) ||
-                  !gutils->isConstantValue(const_cast<Instruction *>(user));
+  bool neededFB = false;
+  if (auto CB = dyn_cast<CallBase>(const_cast<Instruction *>(user))) {
+    neededFB = !callShouldNotUseDerivative(gutils, *CB);
+  } else {
+    neededFB = !gutils->isConstantInstruction(user) ||
+               !gutils->isConstantValue(const_cast<Instruction *>(user));
+  }
   if (neededFB) {
     if (EnzymePrintDiffUse)
       llvm::errs() << " Need direct primal of " << *val
@@ -906,6 +917,9 @@ void DifferentialUseAnalysis::minCut(const DataLayout &DL, LoopInfo &OrigLI,
         if (ASC->getSrcAddressSpace() == 10 && ASC->getDestAddressSpace() == 0)
           continue;
       }
+      if (hasNoCache((*mp.begin()).V)) {
+        continue;
+      }
       // If an allocation call, we cannot cache any "capturing" users
       if (isAllocationCall(V, TLI) || isa<AllocaInst>(V)) {
         auto next = (*mp.begin()).V;
@@ -923,12 +937,7 @@ void DifferentialUseAnalysis::minCut(const DataLayout &DL, LoopInfo &OrigLI,
             noncapture = true;
         } else if (auto CI = dyn_cast<CallInst>(next)) {
           bool captures = false;
-#if LLVM_VERSION_MAJOR >= 14
-          for (size_t i = 0; i < CI->arg_size(); i++)
-#else
-          for (size_t i = 0; i < CI->getNumArgOperands(); i++)
-#endif
-          {
+          for (size_t i = 0; i < CI->arg_size(); i++) {
             if (CI->getArgOperand(i) == V && !isNoCapture(CI, i)) {
               captures = true;
               break;
@@ -953,5 +962,197 @@ void DifferentialUseAnalysis::minCut(const DataLayout &DL, LoopInfo &OrigLI,
       }
     }
   }
+
+  // Fix up non-cacheable calls to use their operand(s) instead
+  for (auto V : Intermediates) {
+    if (!hasNoCache(V))
+      continue;
+    if (!MinReq.count(V))
+      continue;
+    MinReq.remove(V);
+    for (auto &pair : Orig) {
+      if (pair.second.count(Node(V, false))) {
+        MinReq.insert(pair.first.V);
+      }
+    }
+  }
+
+  // Fix up non-repeatable writing calls that chain within rematerialized
+  // allocations. We could iterate from the keys of the valuemap, but that would
+  // be a non-determinstic ordering.
+  for (auto V : Intermediates) {
+    auto found = gutils->rematerializableAllocations.find(V);
+    if (found == gutils->rematerializableAllocations.end())
+      continue;
+    if (!found->second.nonRepeatableWritingCall)
+      continue;
+
+    // We are already caching this allocation directly, we're fine
+    if (MinReq.count(V))
+      continue;
+
+    // If we are recomputing a load, we need to fix this.
+    bool needsLoad = false;
+    for (auto load : found->second.loads)
+      if (Intermediates.count(load) && !MinReq.count(load)) {
+        needsLoad = true;
+        break;
+      }
+    for (auto load : found->second.loadLikeCalls)
+      if (Intermediates.count(load.loadCall) && !MinReq.count(load.loadCall)) {
+        needsLoad = true;
+        break;
+      }
+
+    if (!needsLoad)
+      continue;
+
+    // Rewire the uses to cache the allocation directly.
+    // TODO: as further optimization, we can remove potentially unnecessary
+    // values that we are keeping for stores.
+    MinReq.insert(V);
+  }
+
   return;
+}
+
+bool DifferentialUseAnalysis::callShouldNotUseDerivative(
+    const GradientUtils *gutils, CallBase &call) {
+  bool shadowReturnUsed = false;
+  auto smode = gutils->mode;
+  if (smode == DerivativeMode::ReverseModeGradient)
+    smode = DerivativeMode::ReverseModePrimal;
+  (void)gutils->getReturnDiffeType(&call, nullptr, &shadowReturnUsed, smode);
+
+  bool useConstantFallback =
+      gutils->isConstantInstruction(&call) &&
+      (gutils->isConstantValue(&call) || !shadowReturnUsed);
+  if (useConstantFallback && gutils->mode != DerivativeMode::ForwardMode &&
+      gutils->mode != DerivativeMode::ForwardModeError) {
+    // if there is an escaping allocation, which is deduced needed in
+    // reverse pass, we need to do the recursive procedure to perform the
+    // free.
+
+    // First test if the return is a potential pointer and needed for the
+    // reverse pass
+    bool escapingNeededAllocation = false;
+
+    if (!isNoEscapingAllocation(&call)) {
+      escapingNeededAllocation = EnzymeGlobalActivity;
+
+      std::map<UsageKey, bool> CacheResults;
+      for (auto pair : gutils->knownRecomputeHeuristic) {
+        if (!pair.second || gutils->unnecessaryIntermediates.count(
+                                cast<Instruction>(pair.first))) {
+          CacheResults[UsageKey(pair.first, QueryType::Primal)] = false;
+        }
+      }
+
+      if (!escapingNeededAllocation &&
+          !(EnzymeJuliaAddrLoad && isSpecialPtr(call.getType()))) {
+        if (gutils->TR.anyPointer(&call)) {
+          auto found = gutils->knownRecomputeHeuristic.find(&call);
+          if (found != gutils->knownRecomputeHeuristic.end()) {
+            if (!found->second) {
+              CacheResults.erase(UsageKey(&call, QueryType::Primal));
+              escapingNeededAllocation =
+                  DifferentialUseAnalysis::is_value_needed_in_reverse<
+                      QueryType::Primal>(gutils, &call,
+                                         DerivativeMode::ReverseModeGradient,
+                                         CacheResults, gutils->notForAnalysis);
+            }
+          } else {
+            escapingNeededAllocation =
+                DifferentialUseAnalysis::is_value_needed_in_reverse<
+                    QueryType::Primal>(gutils, &call,
+                                       DerivativeMode::ReverseModeGradient,
+                                       CacheResults, gutils->notForAnalysis);
+          }
+        }
+      }
+
+      // Next test if any allocation could be stored into one of the
+      // arguments.
+      if (!escapingNeededAllocation)
+        for (unsigned i = 0; i < call.arg_size(); ++i) {
+          Value *a = call.getOperand(i);
+
+          if (EnzymeJuliaAddrLoad && isSpecialPtr(a->getType()))
+            continue;
+
+          if (!gutils->TR.anyPointer(a))
+            continue;
+
+          auto vd = gutils->TR.query(a);
+
+          if (!vd[{-1, -1}].isPossiblePointer())
+            continue;
+
+          if (isReadOnly(&call, i))
+            continue;
+
+          // An allocation could only be needed in the reverse pass if it
+          // escapes into an argument. However, is the parameter by which it
+          // escapes could capture the pointer, the rest of Enzyme's caching
+          // mechanisms cannot assume that the allocation itself is
+          // reloadable, since it may have been captured and overwritten
+          // elsewhere.
+          // TODO: this justification will need revisiting in the future as
+          // the caching algorithm becomes increasingly sophisticated.
+          if (!isNoCapture(&call, i))
+            continue;
+
+          escapingNeededAllocation = true;
+        }
+    }
+
+    // If desired this can become even more aggressive by looking through the
+    // called function for any allocations.
+    if (auto F = getFunctionFromCall(&call)) {
+      SmallVector<Function *, 1> todo = {F};
+      SmallPtrSet<Function *, 1> done;
+      bool seenAllocation = false;
+      while (todo.size() && !seenAllocation) {
+        auto cur = todo.pop_back_val();
+        if (done.count(cur))
+          continue;
+        done.insert(cur);
+        // assume empty functions allocate.
+        if (cur->empty()) {
+          // unless they are marked
+          if (isNoEscapingAllocation(cur))
+            continue;
+          seenAllocation = true;
+          break;
+        }
+        auto UR = getGuaranteedUnreachable(cur);
+        for (auto &BB : *cur) {
+          if (UR.count(&BB))
+            continue;
+          for (auto &I : BB)
+            if (auto CB = dyn_cast<CallBase>(&I)) {
+              if (isNoEscapingAllocation(CB))
+                continue;
+              if (isAllocationCall(CB, gutils->TLI)) {
+                seenAllocation = true;
+                goto finish;
+              }
+              if (auto F = getFunctionFromCall(CB)) {
+                todo.push_back(F);
+                continue;
+              }
+              // Conservatively assume indirect functions allocate.
+              seenAllocation = true;
+              goto finish;
+            }
+        }
+      finish:;
+      }
+      if (!seenAllocation)
+        escapingNeededAllocation = false;
+    }
+    if (escapingNeededAllocation)
+      useConstantFallback = false;
+  }
+  return useConstantFallback;
 }

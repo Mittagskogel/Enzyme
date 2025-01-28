@@ -1,4 +1,4 @@
-//===- Enzyme.h - Automatic Differentiation Transformation Pass    -------===//
+//=- JLInstSimplify.h - Additional instsimplifyrules for julia programs =//
 //
 //                             Enzyme Project
 //
@@ -17,15 +17,27 @@
 // }
 //
 //===----------------------------------------------------------------------===//
-//
-// This file declares Enzyme, a transformation pass that takes replaces calls
-// to function calls to *__enzyme_autodiff* with a call to the derivative of
-// the function passed as the first argument.
-//
-//===----------------------------------------------------------------------===//
+#include <llvm/Config/llvm-config.h>
 
-#include "llvm/Pass.h"
-#include "llvm/Passes/PassBuilder.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassPlugin.h"
 
-llvm::ModulePass *createEnzymePass(bool PostOpt = false);
-void augmentPassBuilder(llvm::PassBuilder &PB);
+namespace llvm {
+class FunctionPass;
+}
+
+class JLInstSimplifyNewPM final
+    : public llvm::AnalysisInfoMixin<JLInstSimplifyNewPM> {
+  friend struct llvm::AnalysisInfoMixin<JLInstSimplifyNewPM>;
+
+private:
+  static llvm::AnalysisKey Key;
+
+public:
+  using Result = llvm::PreservedAnalyses;
+  JLInstSimplifyNewPM() {}
+
+  Result run(llvm::Function &M, llvm::FunctionAnalysisManager &MAM);
+
+  static bool isRequired() { return true; }
+};

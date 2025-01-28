@@ -2,14 +2,16 @@
 
 set -e
 
-INPUT_DIR=$1
+INPUT_DIR=$(dirname $1)/..
 OUTPUT_FILE=$2
 
+echo $INPUT_FILE
+echo $OUTPUT_FILE
 mkdir -p "$(dirname "$OUTPUT_FILE")"
 
 echo > "$OUTPUT_FILE"
 echo "const char* include_headers[][2] = {" >> "$OUTPUT_FILE"
-for FILE in $(find $INPUT_DIR -type f); do
+for FILE in $(find -L $INPUT_DIR -type f); do
     echo $FILE
     INTERNAL_FILENAME=$(echo $FILE | sed "s|$INPUT_DIR|\/enzymeroot\/|")
     echo $INTERNAL_FILENAME
