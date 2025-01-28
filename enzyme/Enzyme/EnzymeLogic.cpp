@@ -5465,11 +5465,11 @@ public:
   }
   void visitFenceInst(llvm::FenceInst &FI) { return; }
 
-  bool handleIntrinsic(llvm::CallInst &CI, Intrinsic::ID ID) {
+  bool handleIntrinsic(llvm::CallBase &CI, Intrinsic::ID ID) {
     if (isDbgInfoIntrinsic(ID))
       return true;
 
-    auto newI = cast<llvm::CallInst>(getNewFromOriginal(&CI));
+    auto newI = cast<llvm::CallBase>(getNewFromOriginal(&CI));
     IRBuilder<> B(newI);
 
     SmallVector<Value *, 2> orig_ops(CI.arg_size());
@@ -5620,9 +5620,9 @@ public:
     return cast<Instruction>(getNewFromOriginal((llvm::Value *)v));
   }
 
-  bool handleKnownCalls(llvm::CallInst &call, llvm::Function *called,
+  bool handleKnownCalls(llvm::CallBase &call, llvm::Function *called,
                         llvm::StringRef funcName,
-                        llvm::CallInst *const newCall) {
+                        llvm::CallBase *const newCall) {
     return false;
   }
 
@@ -5633,17 +5633,23 @@ public:
     llvm_unreachable("unknown get truncated func");
     return v;
   }
+  // void visitInvokeInst(llvm::InvokeInst &CI) {
+  //   // fprintf(stderr, "Won't handle invoke instruction.\n");
+  //   EmitWarning("FPNoInvoke", CI,
+  //               "Will not handle invoke instruction.", CI);    
+  // }
+  
   // Return
-  void visitCallInst(llvm::CallInst &CI) {
+  void visitCallBase(llvm::CallBase &CI) {
     Intrinsic::ID ID;
-    StringRef funcName = getFuncNameFromCall(const_cast<CallInst *>(&CI));
+    StringRef funcName = getFuncNameFromCall(const_cast<CallBase *>(&CI));
     if (isMemFreeLibMFunction(funcName, &ID))
       if (handleIntrinsic(CI, ID))
         return;
 
     using namespace llvm;
 
-    CallInst *const newCall = cast<CallInst>(getNewFromOriginal(&CI));
+    CallBase *const newCall = cast<CallBase>(getNewFromOriginal(&CI));
     IRBuilder<> BuilderZ(newCall);
 
     if (auto called = CI.getCalledFunction())
@@ -5656,6 +5662,18 @@ public:
       if (Func && !Func->empty()) {
         auto val = GetShadow(ctx, getNewFromOriginal(CI.getCalledOperand()));
         newCall->setCalledOperand(val);
+      } else if (!Func) {
+        switch (mode) {
+        case TruncMemMode:
+        case TruncOpMode:
+        case TruncOpFullModuleMode:
+          // fprintf(stderr, "Won't follow indirect call.\n");
+          EmitWarning("FPNoFollow", CI,
+                      "Will not follow FP through this indirect call.", CI);
+          break;
+        default:
+          llvm_unreachable("Unknown trunc mode");
+        }        
       } else {
         switch (mode) {
         case TruncMemMode:
