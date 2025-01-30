@@ -115,6 +115,27 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
   free(__enzyme_fprt_double_to_ptr(a));
 }
 
+// TODO this is a bit sketchy if the user cast their float to int before calling
+// this. We need to detect these patterns
+#define __ENZYME_MPFR_LROUND(OP_TYPE, LLVM_OP_NAME,                            \
+                             FROM_TYPE, RET, ARG1, MPFR_SET_ARG1,              \
+                             ROUNDING_MODE)                                    \
+  __ENZYME_MPFR_ATTRIBUTES                                                     \
+  RET __enzyme_fprt_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(                  \
+      ARG1 a, int64_t exponent, int64_t significand, int64_t mode,             \
+      const char *loc) {                                                       \
+    if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      mpfr_t ma;                                                               \
+      mpfr_init2(ma, significand);                                             \
+      mpfr_set_##MPFR_SET_ARG1(ma, a, ROUNDING_MODE);                          \
+      RET c = mpfr_get_si(ma, ROUNDING_MODE);                                  \
+      mpfr_clear(ma);                                                          \
+      return c;                                                                \
+    } else {                                                                   \
+      abort();                                                                 \
+    }                                                                          \
+  }
+
 #define __ENZYME_MPFR_SINGOP(OP_TYPE, LLVM_OP_NAME, MPFR_FUNC_NAME, FROM_TYPE, \
                              RET, MPFR_GET, ARG1, MPFR_SET_ARG1,               \
                              ROUNDING_MODE)                                    \
