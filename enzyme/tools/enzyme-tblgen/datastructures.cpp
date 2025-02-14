@@ -78,7 +78,7 @@ bool isArgUsed(StringRef toFind, const DagInit *toSearch,
                ArrayRef<std::string> nameVec,
                const DenseMap<size_t, ArgType> &argTypesFull) {
   for (size_t i = 0; i < toSearch->getNumArgs(); i++) {
-    if (DagInit *arg = dyn_cast<DagInit>(toSearch->getArg(i))) {
+    if (const DagInit *arg = dyn_cast<DagInit>(toSearch->getArg(i))) {
       // os << " Recursing. Magic!\n";
       if (isArgUsed(toFind, arg, nameVec, argTypesFull))
         return true;
@@ -152,7 +152,7 @@ bool isArgUsed(StringRef toFind, const DagInit *toSearch,
   return false;
 }
 
-Rule::Rule(ArrayRef<std::string> nameVec, DagInit *dag, size_t activeArgIdx,
+Rule::Rule(ArrayRef<std::string> nameVec, const DagInit *dag, size_t activeArgIdx,
            const StringMap<size_t> &patternArgs,
            const DenseMap<size_t, ArgType> &patternTypes,
            const DenseSet<size_t> &patternMutables)
@@ -195,7 +195,7 @@ Rule::Rule(ArrayRef<std::string> nameVec, DagInit *dag, size_t activeArgIdx,
 
 bool Rule::isBLASLevel2or3() const { return BLASLevel2or3; }
 
-DagInit *Rule::getRuleDag() { return rewriteRule; }
+const DagInit *Rule::getRuleDag() { return rewriteRule; }
 
 size_t Rule::getHandledArgIdx() const { return activeArg; }
 
@@ -291,7 +291,7 @@ void fillArgTypes(const Record *pattern, DenseMap<size_t, ArgType> &argTypes) {
 
 void fillArgs(const Record *r, SmallVectorImpl<std::string> &args,
               StringMap<size_t> &argNameToPos) {
-  DagInit *argOps = r->getValueAsDag("PatternToMatch");
+  const DagInit *argOps = r->getValueAsDag("PatternToMatch");
   size_t numArgs = argOps->getNumArgs();
   args.reserve(numArgs);
   for (size_t i = 0; i < numArgs; i++) {
@@ -375,7 +375,7 @@ void fillArgUserMap(ArrayRef<Rule> rules, ArrayRef<std::string> nameVec,
   }
 }
 
-TGPattern::TGPattern(Record *r) : blasName(r->getNameInitAsString()) {
+TGPattern::TGPattern(Record const * r) : blasName(r->getNameInitAsString()) {
   fillArgs(r, args, argNameToPos);
   fillArgTypes(r, argTypes);
   fillRelatedLenghts(r, argNameToPos, argTypes, relatedLengths);
@@ -391,9 +391,9 @@ TGPattern::TGPattern(Record *r) : blasName(r->getNameInitAsString()) {
 
   // Now create the rules for this pattern
   {
-    ListInit *derivOps = r->getValueAsListInit("ArgDerivatives");
+    const ListInit *derivOps = r->getValueAsListInit("ArgDerivatives");
     for (auto &&derivOp : enumerate(*derivOps)) {
-      DagInit *derivRule = cast<DagInit>(derivOp.value());
+      const DagInit *derivRule = cast<DagInit>(derivOp.value());
       size_t actIdx = posActArgs[derivOp.index()];
       rules.push_back(
           Rule(args, derivRule, actIdx, argNameToPos, argTypes, mutables));

@@ -71,11 +71,11 @@ std::string get_input_mat(const DagInit *ruleDag) {
   if (Def->isSubClassOf("Seq")) {
     // handle seq rules
     for (size_t i = 0; i < ruleDag->getNumArgs(); i++) {
-      Init *subArg = ruleDag->getArg(i);
-      DagInit *sub_Dag = cast<DagInit>(subArg);
+      const Init *subArg = ruleDag->getArg(i);
+      const DagInit *sub_Dag = cast<DagInit>(subArg);
       for (size_t j = 0; j < sub_Dag->getNumArgs(); j++) {
-        Init *subArg = sub_Dag->getArg(j);
-        if (DefInit *def = dyn_cast<DefInit>(subArg)) {
+        const Init *subArg = sub_Dag->getArg(j);
+        if (const DefInit *def = dyn_cast<DefInit>(subArg)) {
           const auto Def = def->getDef();
           if (Def->isSubClassOf("input")) {
             toCache = Def->getValueAsString("name");
@@ -86,8 +86,8 @@ std::string get_input_mat(const DagInit *ruleDag) {
     }
   } else {
     for (size_t j = 0; j < ruleDag->getNumArgs(); j++) {
-      Init *subArg = ruleDag->getArg(j);
-      if (DefInit *def = dyn_cast<DefInit>(subArg)) {
+      const Init *subArg = ruleDag->getArg(j);
+      if (const DefInit *def = dyn_cast<DefInit>(subArg)) {
         const auto Def = def->getDef();
         if (Def->isSubClassOf("input")) {
           toCache = Def->getValueAsString("name");

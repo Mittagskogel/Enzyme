@@ -87,14 +87,14 @@ void emit_BLASDiffUse(TGPattern &pattern, llvm::raw_ostream &os) {
              << nameVec[derivOp.getHandledArgIdx()] << ") return true;\n";
         } else {
           bool isNoop = false;
-          if (DagInit *resultRoot = dyn_cast<DagInit>(derivOp.getRuleDag())) {
+          if (const DagInit *resultRoot = dyn_cast<DagInit>(derivOp.getRuleDag())) {
             auto opName = resultRoot->getOperator()->getAsString();
             auto Def = cast<DefInit>(resultRoot->getOperator())->getDef();
             if (Def->getName() == "noop" || Def->getName() == "inactive") {
               isNoop = true;
             }
           }
-          if (DefInit *DefArg = dyn_cast<DefInit>(derivOp.getRuleDag())) {
+          if (const DefInit *DefArg = dyn_cast<DefInit>(derivOp.getRuleDag())) {
             auto Def = DefArg->getDef();
             if (Def->getName() == "noop" || Def->getName() == "inactive") {
               isNoop = true;

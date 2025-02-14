@@ -201,8 +201,8 @@ void emitBlasDeclUpdater(const RecordKeeper &RK, raw_ostream &os) {
   os << "  }\n";
   {
     const auto &patterns = RK.getAllDerivedDefinitions("CallPattern");
-    for (Record *pattern : patterns) {
-      DagInit *tree = pattern->getValueAsDag("PatternToMatch");
+    for (const Record *pattern : patterns) {
+      const DagInit *tree = pattern->getValueAsDag("PatternToMatch");
       os << "  if ((";
       bool prev = false;
       for (auto nameI : *pattern->getValueAsListInit("names")) {
@@ -238,9 +238,9 @@ void emitBlasDeclUpdater(const RecordKeeper &RK, raw_ostream &os) {
            << attrName << "));\n";
         os << "  #endif \n";
       }
-      ListInit *argOps = pattern->getValueAsListInit("ArgDerivatives");
+      const ListInit *argOps = pattern->getValueAsListInit("ArgDerivatives");
       for (auto argOpEn : enumerate(*argOps)) {
-        if (DagInit *resultRoot = dyn_cast<DagInit>(argOpEn.value())) {
+        if (const DagInit *resultRoot = dyn_cast<DagInit>(argOpEn.value())) {
           auto opName = resultRoot->getOperator()->getAsString();
           auto Def = cast<DefInit>(resultRoot->getOperator())->getDef();
           if (opName == "InactiveArgSpec" ||

@@ -53,7 +53,7 @@ bool has_active_return(StringRef str);
 /// but only the part that affects the specific argument being active.
 class Rule {
 private:
-  DagInit *rewriteRule;
+  const DagInit *rewriteRule;
   // which argument from the primary function do we handle here?
   size_t activeArg;
   StringMap<size_t> argNameToPos;
@@ -64,12 +64,12 @@ private:
 public:
   SmallVector<std::string, 1> nameVec;
   DenseMap<size_t, ArgType> argTypesFull;
-  Rule(ArrayRef<std::string> nameVec, DagInit *dag, size_t activeArgIdx,
+  Rule(ArrayRef<std::string> nameVec, const DagInit *dag, size_t activeArgIdx,
        const StringMap<size_t> &patternArgs,
        const DenseMap<size_t, ArgType> &patternTypes,
        const DenseSet<size_t> &patternMutables);
   bool isBLASLevel2or3() const;
-  DagInit *getRuleDag();
+  const DagInit *getRuleDag();
   size_t getHandledArgIdx() const;
   const StringMap<size_t> &getArgNameMap() const;
   const DenseMap<size_t, ArgType> &getArgTypeMap() const;
@@ -121,7 +121,7 @@ private:
   DenseMap<size_t, SmallVector<size_t, 3>> relatedLengths;
 
 public:
-  TGPattern(Record *r);
+  TGPattern(Record const * r);
   SmallVector<size_t, 3> getRelatedLengthArgs(size_t arg) const;
   bool isBLASLevel2or3() const;
   const DenseMap<size_t, DenseSet<size_t>> &getArgUsers() const;

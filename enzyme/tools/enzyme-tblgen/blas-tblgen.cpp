@@ -36,8 +36,8 @@ std::string get_blas_ret_ty(StringRef dfnc_name) {
     return "Builder2.getVoidTy()";
 }
 
-bool hasDiffeRet(Init *resultTree) {
-  if (DagInit *resultRoot = dyn_cast<DagInit>(resultTree)) {
+bool hasDiffeRet(const Init *resultTree) {
+  if (const DagInit *resultRoot = dyn_cast<DagInit>(resultTree)) {
     auto opName = resultRoot->getOperator()->getAsString();
     auto Def = cast<DefInit>(resultRoot->getOperator())->getDef();
     if (opName == "DiffeRetIndex" || Def->isSubClassOf("DiffeRetIndex")) {
@@ -48,7 +48,7 @@ bool hasDiffeRet(Init *resultTree) {
         return true;
     }
   }
-  if (DefInit *DefArg = dyn_cast<DefInit>(resultTree)) {
+  if (const DefInit *DefArg = dyn_cast<DefInit>(resultTree)) {
     auto Def = DefArg->getDef();
     if (Def->isSubClassOf("DiffeRetIndex")) {
       return true;
@@ -57,8 +57,8 @@ bool hasDiffeRet(Init *resultTree) {
   return false;
 }
 
-bool hasAdjoint(Init *resultTree, StringRef argName) {
-  if (DagInit *resultRoot = dyn_cast<DagInit>(resultTree)) {
+bool hasAdjoint(const Init *resultTree, StringRef argName) {
+  if (const DagInit *resultRoot = dyn_cast<DagInit>(resultTree)) {
     auto opName = resultRoot->getOperator()->getAsString();
     auto Def = cast<DefInit>(resultRoot->getOperator())->getDef();
     if (Def->isSubClassOf("adj")) {
@@ -70,7 +70,7 @@ bool hasAdjoint(Init *resultTree, StringRef argName) {
         return true;
     }
   }
-  if (DefInit *DefArg = dyn_cast<DefInit>(resultTree)) {
+  if (const DefInit *DefArg = dyn_cast<DefInit>(resultTree)) {
     auto Def = DefArg->getDef();
     if (Def->isSubClassOf("adj")) {
       auto name = Def->getValueAsString("name");
@@ -81,12 +81,12 @@ bool hasAdjoint(Init *resultTree, StringRef argName) {
 }
 
 static void checkBlasCallsInDag(const RecordKeeper &RK,
-                                ArrayRef<Record *> blasPatterns,
+                                const ArrayRef<const Record *> blasPatterns,
                                 StringRef blasName, const DagInit *toSearch) {
 
   // For nested FAdd, ... rules which don't directly call a blass fnc
   for (size_t i = 0; i < toSearch->getNumArgs(); i++) {
-    if (DagInit *arg = dyn_cast<DagInit>(toSearch->getArg(i))) {
+    if (const DagInit *arg = dyn_cast<DagInit>(toSearch->getArg(i))) {
       checkBlasCallsInDag(RK, blasPatterns, blasName, arg);
     }
   }
@@ -96,12 +96,12 @@ static void checkBlasCallsInDag(const RecordKeeper &RK,
 /// blas function will use the correct amount of args
 /// Later we might check for "types" too.
 static void checkBlasCalls(const RecordKeeper &RK,
-                           ArrayRef<Record *> blasPatterns) {
+                           const ArrayRef<const Record *> blasPatterns) {
   for (auto &&pattern : blasPatterns) {
-    ListInit *argOps = pattern->getValueAsListInit("ArgDerivatives");
+    const ListInit *argOps = pattern->getValueAsListInit("ArgDerivatives");
     // for each possibly active parameter
     for (auto argOp : *argOps) {
-      DagInit *resultRoot = cast<DagInit>(argOp);
+      const DagInit *resultRoot = cast<DagInit>(argOp);
       checkBlasCallsInDag(RK, blasPatterns, pattern->getName(), resultRoot);
     }
   }
@@ -956,7 +956,7 @@ void emit_fwd_rewrite_rules(const TGPattern &pattern, raw_ostream &os) {
   os << "  }\n";
 }
 
-void emit_tmp_free(Record *Def, raw_ostream &os, StringRef builder) {
+void emit_tmp_free(const Record *Def, raw_ostream &os, StringRef builder) {
   const auto args = Def->getValueAsListOfStrings("args");
   // allocating tmp variables is optional, return if not required
   if (args.size() == 0)
@@ -966,7 +966,7 @@ void emit_tmp_free(Record *Def, raw_ostream &os, StringRef builder) {
   os << "    CreateDealloc(" << builder << ", true_" << allocName << ");\n";
 }
 
-void emit_tmp_creation(Record *Def, raw_ostream &os, StringRef builder) {
+void emit_tmp_creation(const Record *Def, raw_ostream &os, StringRef builder) {
   const auto args = Def->getValueAsListOfStrings("args");
   // allocating tmp variables is optional, return if not required
   if (args.size() == 0)
@@ -1050,8 +1050,8 @@ void emit_deriv_rule(const StringMap<TGPattern> &patternMap, Rule &rule,
   } else if (Def->isSubClassOf("Seq")) {
     // handle seq rules
     for (size_t i = 0; i < ruleDag->getNumArgs(); i++) {
-      Init *subArg = ruleDag->getArg(i);
-      DagInit *sub_Dag = cast<DagInit>(subArg);
+      const Init *subArg = ruleDag->getArg(i);
+      const DagInit *sub_Dag = cast<DagInit>(subArg);
       if (auto sub_def = dyn_cast<DefInit>(sub_Dag->getOperator())) {
         const auto sub_Def = sub_def->getDef();
         if (sub_Def->isSubClassOf("b")) {
@@ -1082,7 +1082,7 @@ void emit_deriv_rule(const StringMap<TGPattern> &patternMap, Rule &rule,
 // that the arg being differentiated is argAct.
 // The map offsetToBaseNames takes vinc, ld, and maps them to
 // the arg name of the original vector/matrix
-void rev_call_arg(DagInit *ruleDag, Rule &rule, size_t actArg, size_t pos,
+void rev_call_arg(const DagInit *ruleDag, Rule &rule, size_t actArg, size_t pos,
                   raw_ostream &os) {
   const auto nameMap = rule.getArgNameMap();
   const auto typeMap = rule.getArgTypeMap();
@@ -1147,7 +1147,7 @@ void rev_call_arg(DagInit *ruleDag, Rule &rule, size_t actArg, size_t pos,
 
     errs() << Def->getName() << "\n";
     PrintFatalError("Dag/Def that isn't a DiffeRet!!");
-  } else if (DefInit *DefArg = dyn_cast<DefInit>(arg)) {
+  } else if (const DefInit *DefArg = dyn_cast<DefInit>(arg)) {
     auto Def = DefArg->getDef();
     if (Def->isSubClassOf("DiffeRetIndex")) {
       os << "{dif}";
@@ -1306,14 +1306,10 @@ void rev_call_args(StringRef argName, Rule &rule, size_t actArg,
 
   const auto nameMap = rule.getArgNameMap();
 
-  auto ruleDag = rule.getRuleDag();
+  // handle Seq
+  const auto ruleDag = (subRule == -1) ? rule.getRuleDag()
+    : cast<DagInit>(rule.getRuleDag()->getArg(subRule));
   size_t numArgs = ruleDag->getNumArgs();
-
-  if (subRule != -1) {
-    // handle Seq
-    ruleDag = cast<DagInit>(ruleDag->getArg(subRule));
-    numArgs = ruleDag->getNumArgs();
-  }
 
   os << "        std::vector<Value *>" << argName << ";\n";
 
@@ -1392,7 +1388,7 @@ void emit_fret_call(StringRef dfnc_name, StringRef argName, StringRef name,
 
 // todo: update rt_active_<X> to use actual dag requirements,
 // possibly by or-ing them
-void emit_runtime_condition(DagInit *ruleDag, StringRef name, StringRef tab,
+void emit_runtime_condition(const DagInit *ruleDag, StringRef name, StringRef tab,
                             StringRef B, bool isFP, raw_ostream &os) {
   os << tab << "BasicBlock *nextBlock_" << name << " = nullptr;\n"
      << tab << "if (EnzymeRuntimeActivityCheck && cacheMode"
@@ -1408,7 +1404,7 @@ void emit_runtime_condition(DagInit *ruleDag, StringRef name, StringRef tab,
      << tab << "}\n";
 }
 
-void emit_runtime_continue(DagInit *ruleDag, StringRef name, StringRef tab,
+void emit_runtime_continue(const DagInit *ruleDag, StringRef name, StringRef tab,
                            StringRef B, bool isFP, raw_ostream &os) {
   os << tab << "if (nextBlock_" << name << (isFP ? " && byRef" : "") << ") {\n"
      << tab << "  " << B << ".CreateBr(nextBlock_" << name << ");\n"
@@ -1416,11 +1412,11 @@ void emit_runtime_continue(DagInit *ruleDag, StringRef name, StringRef tab,
      << tab << "}\n";
 }
 
-void if_rule_condition_inner(DagInit *ruleDag, StringRef name, StringRef tab,
+void if_rule_condition_inner(const DagInit *ruleDag, StringRef name, StringRef tab,
                              raw_ostream &os, llvm::StringSet<> &seen) {
   for (size_t pos = 0; pos < ruleDag->getNumArgs();) {
-    Init *arg = ruleDag->getArg(pos);
-    if (DefInit *DefArg = dyn_cast<DefInit>(arg)) {
+    const Init *arg = ruleDag->getArg(pos);
+    if (const DefInit *DefArg = dyn_cast<DefInit>(arg)) {
       auto Def = DefArg->getDef();
       if (Def->isSubClassOf("adj")) {
         auto name = Def->getValueAsString("name");
@@ -1435,7 +1431,7 @@ void if_rule_condition_inner(DagInit *ruleDag, StringRef name, StringRef tab,
 
 // primal arguments are always available,
 // shadow arguments (d_<X>) might not, so check if they are active
-void emit_if_rule_condition(DagInit *ruleDag, StringRef name, StringRef tab,
+void emit_if_rule_condition(const DagInit *ruleDag, StringRef name, StringRef tab,
                             raw_ostream &os) {
   llvm::StringSet<> seen = llvm::StringSet<>();
 
@@ -1680,8 +1676,8 @@ void emit_rev_rewrite_rules(const StringMap<TGPattern> &patternMap,
 
       // handle seq rules
       for (size_t i = 0; i < ruleDag->getNumArgs(); i++) {
-        Init *subArg = ruleDag->getArg(i);
-        DagInit *sub_Dag = cast<DagInit>(subArg);
+        const Init *subArg = ruleDag->getArg(i);
+        const DagInit *sub_Dag = cast<DagInit>(subArg);
         if (auto sub_def = dyn_cast<DefInit>(sub_Dag->getOperator())) {
           const auto sub_Def = sub_def->getDef();
           if (sub_Def->isSubClassOf("b")) {
