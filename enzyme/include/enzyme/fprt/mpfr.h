@@ -123,7 +123,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
 __ENZYME_MPFR_ATTRIBUTES
 long long __enzyme_get_trunc_flop_count() {
   if (trunc_flop_counter < 0) {
-    std::cout << "ERROR: FLOP Counter Overflow!" << std::endl;
+    puts("ERROR: FLOP Counter Overflow!");
     exit(0);
   }
 
@@ -133,6 +133,16 @@ long long __enzyme_get_trunc_flop_count() {
 __ENZYME_MPFR_ATTRIBUTES
 long long f_enzyme_get_trunc_flop_count() {
   return __enzyme_get_trunc_flop_count();
+}
+
+void __enzyme_fprt_64_52_count(int64_t exponent, int64_t significand,
+                               int64_t mode, const char *loc) {
+}
+void __enzyme_fprt_32_23_count(int64_t exponent, int64_t significand,
+                               int64_t mode, const char *loc) {
+}
+void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
+                               int64_t mode, const char *loc) {
 }
 
 // TODO this is a bit sketchy if the user cast their float to int before calling

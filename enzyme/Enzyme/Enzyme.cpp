@@ -122,6 +122,8 @@ llvm::cl::opt<std::string> EnzymeTruncateAll(
         "Truncate all floating point operations. "
         "E.g. \"64to32\" or \"64to<exponent_width>-<significand_width>\"."));
 
+llvm::cl::opt<bool> EnzymeTruncateCount("enzyme-truncate-count");
+
 #if LLVM_VERSION_MAJOR >= 14
 #define addAttribute addAttributeAtIndex
 #define getAttribute getAttributeAtIndex
@@ -2110,6 +2112,39 @@ public:
     return status;
   }
 
+  bool handleFlopCount(Function &F) {
+    if (!EnzymeTruncateCount)
+      return false;
+
+    if (F.getName().starts_with(EnzymeFPRTPrefix))
+      return false;
+
+    for (auto Repr : {getDefaultFloatRepr(16), getDefaultFloatRepr(32),
+                      getDefaultFloatRepr(64)}) {
+      IRBuilder<> Builder(F.getContext());
+      RequestContext context(&*F.getEntryBlock().begin(), &Builder);
+      Function *TruncatedFunc = Logic.CreateTruncateFunc(
+          context, &F, FloatTruncation(Repr, TruncCountMode), TruncCountMode);
+
+      ValueToValueMapTy Mapping;
+      for (auto &&[Arg, TArg] : llvm::zip(F.args(), TruncatedFunc->args()))
+        Mapping[&TArg] = &Arg;
+
+      // Move the truncated body into the original function
+      F.deleteBody();
+#if LLVM_VERSION_MAJOR >= 16
+      F.splice(F.begin(), TruncatedFunc);
+#else
+      F.getBasicBlockList().splice(F.begin(),
+                                   TruncatedFunc->getBasicBlockList());
+#endif
+      RemapFunction(F, Mapping,
+                    RF_NoModuleLevelChanges | RF_IgnoreMissingLocals);
+      TruncatedFunc->deleteBody();
+    }
+    return true;
+  }
+
   bool handleFullModuleTrunc(Function &F) {
     if (F.getName().starts_with(EnzymeFPRTPrefix))
       return false;
@@ -2184,6 +2219,10 @@ public:
   }
 
   bool lowerEnzymeCalls(Function &F, std::set<Function *> &done) {
+    if (!EnzymeTruncateAll.empty() && EnzymeTruncateCount)
+      llvm::report_fatal_error(
+          "error: trunc all and trunc count are incompatible");
+
     if (done.count(&F))
       return false;
     done.insert(&F);
@@ -2916,6 +2955,9 @@ public:
       A.run();
 #endif
     }
+
+    if (handleFlopCount(F))
+      return true;
 
     return Changed;
   }
