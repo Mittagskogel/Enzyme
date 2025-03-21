@@ -2113,8 +2113,10 @@ public:
   }
 
   bool handleFlopCount(Function &F) {
-    if (!EnzymeTruncateCount)
+    if (F.isDeclaration())
       return false;
+    // if (!EnzymeTruncateCount)
+    //   return false;
 
     if (F.getName().starts_with(EnzymeFPRTPrefix))
       return false;
@@ -2956,9 +2958,6 @@ public:
 #endif
     }
 
-    if (handleFlopCount(F))
-      return true;
-
     return Changed;
   }
 
@@ -3023,6 +3022,10 @@ public:
         continue;
 
       changed |= lowerEnzymeCalls(F, done);
+    }
+
+    for (Function &F : M) {
+      changed |= handleFlopCount(F);
     }
 
     for (Function &F : M) {
