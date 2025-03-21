@@ -24,6 +24,7 @@
 #ifndef __ENZYME_RUNTIME_ENZYME_MPFR__
 #define __ENZYME_RUNTIME_ENZYME_MPFR__
 
+#include <iostream>
 #include <mpfr.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -74,6 +75,10 @@ typedef struct __enzyme_fp {
   mpfr_t v;
 } __enzyme_fp;
 
+// Global variable to count truncated flops
+// TODO only implemented for op mode at the moment
+long long unsigned trunc_flop_counter = 0;
+
 __ENZYME_MPFR_ATTRIBUTES
 double __enzyme_fprt_64_52_get(double _a, int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
@@ -115,6 +120,21 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
   free(__enzyme_fprt_double_to_ptr(a));
 }
 
+__ENZYME_MPFR_ATTRIBUTES
+long long __enzyme_get_trunc_flop_count() {
+  if (trunc_flop_counter < 0) {
+    std::cout << "ERROR: FLOP Counter Overflow!" << std::endl;
+    exit(0);
+  }
+
+  return trunc_flop_counter;
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+long long f_enzyme_get_trunc_flop_count() {
+  return __enzyme_get_trunc_flop_count();
+}
+
 // TODO this is a bit sketchy if the user cast their float to int before calling
 // this. We need to detect these patterns
 #define __ENZYME_MPFR_LROUND(OP_TYPE, LLVM_OP_NAME,                            \
@@ -144,6 +164,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       ARG1 a, int64_t exponent, int64_t significand, int64_t mode,             \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      ++trunc_flop_counter;                                                    \
       mpfr_t ma, mc;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mc, significand);                                             \
@@ -174,6 +195,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      ++trunc_flop_counter;                                                    \
       mpfr_t ma, mc;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mc, significand);                                             \
@@ -202,6 +224,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      ++trunc_flop_counter;                                                    \
       mpfr_t ma, mb, mc;                                                       \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mb, significand);                                             \
@@ -233,6 +256,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       TYPE a, TYPE b, TYPE c, int64_t exponent, int64_t significand,           \
       int64_t mode, const char *loc) {                                         \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      trunc_flop_counter+=2;                                                   \
       mpfr_t ma, mb, mc, mmul, madd;                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mb, significand);                                             \
@@ -275,6 +299,7 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       TYPE a, TYPE b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
+      ++trunc_flop_counter;                                                    \
       mpfr_t ma, mb;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mb, significand);                                             \
