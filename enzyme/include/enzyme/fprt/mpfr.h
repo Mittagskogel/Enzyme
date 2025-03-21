@@ -24,6 +24,7 @@
 #ifndef __ENZYME_RUNTIME_ENZYME_MPFR__
 #define __ENZYME_RUNTIME_ENZYME_MPFR__
 
+#include <atomic>
 #include <iostream>
 #include <mpfr.h>
 #include <stdint.h>
@@ -77,7 +78,10 @@ typedef struct __enzyme_fp {
 
 // Global variable to count truncated flops
 // TODO only implemented for op mode at the moment
-long long unsigned trunc_flop_counter = 0;
+std::atomic<long long> trunc_flop_counter = 0;
+std::atomic<long long> double_flop_counter = 0;
+std::atomic<long long> float_flop_counter = 0;
+std::atomic<long long> half_flop_counter = 0;
 
 __ENZYME_MPFR_ATTRIBUTES
 double __enzyme_fprt_64_52_get(double _a, int64_t exponent, int64_t significand,
@@ -131,18 +135,66 @@ long long __enzyme_get_trunc_flop_count() {
 }
 
 __ENZYME_MPFR_ATTRIBUTES
+long long __enzyme_get_double_flop_count() {
+  if (trunc_flop_counter < 0) {
+    puts("ERROR: FLOP Counter Overflow!");
+    exit(0);
+  }
+
+  return double_flop_counter;
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+long long __enzyme_get_float_flop_count() {
+  if (trunc_flop_counter < 0) {
+    puts("ERROR: FLOP Counter Overflow!");
+    exit(0);
+  }
+
+  return float_flop_counter;
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+long long __enzyme_get_half_flop_count() {
+  if (trunc_flop_counter < 0) {
+    puts("ERROR: FLOP Counter Overflow!");
+    exit(0);
+  }
+
+  return half_flop_counter;
+}
+
+__ENZYME_MPFR_ATTRIBUTES
 long long f_enzyme_get_trunc_flop_count() {
   return __enzyme_get_trunc_flop_count();
 }
 
+__ENZYME_MPFR_ATTRIBUTES
+long long f_enzyme_get_double_flop_count() {
+  return __enzyme_get_double_flop_count();
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+long long f_enzyme_get_float_flop_count() {
+  return __enzyme_get_float_flop_count();
+}
+
+__ENZYME_MPFR_ATTRIBUTES
+long long f_enzyme_get_half_flop_count() {
+  return __enzyme_get_half_flop_count();
+}
+
 void __enzyme_fprt_64_52_count(int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
+  double_flop_counter.fetch_add(1, std::memory_order_relaxed);
 }
 void __enzyme_fprt_32_23_count(int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
+  float_flop_counter.fetch_add(1, std::memory_order_relaxed);
 }
 void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
                                int64_t mode, const char *loc) {
+  half_flop_counter.fetch_add(1, std::memory_order_relaxed);
 }
 
 // TODO this is a bit sketchy if the user cast their float to int before calling
@@ -174,7 +226,7 @@ void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
       ARG1 a, int64_t exponent, int64_t significand, int64_t mode,             \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
-      ++trunc_flop_counter;                                                    \
+      trunc_flop_counter.fetch_add(1, std::memory_order_relaxed);              \
       mpfr_t ma, mc;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mc, significand);                                             \
@@ -205,7 +257,7 @@ void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
-      ++trunc_flop_counter;                                                    \
+      trunc_flop_counter.fetch_add(1, std::memory_order_relaxed);              \
       mpfr_t ma, mc;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mc, significand);                                             \
@@ -234,7 +286,7 @@ void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
-      ++trunc_flop_counter;                                                    \
+      trunc_flop_counter.fetch_add(1, std::memory_order_relaxed);              \
       mpfr_t ma, mb, mc;                                                       \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mb, significand);                                             \
@@ -309,7 +361,7 @@ void __enzyme_fprt_16_10_count(int64_t exponent, int64_t significand,
       TYPE a, TYPE b, int64_t exponent, int64_t significand, int64_t mode,     \
       const char *loc) {                                                       \
     if (__enzyme_fprt_is_op_mode(mode)) {                                      \
-      ++trunc_flop_counter;                                                    \
+      trunc_flop_counter.fetch_add(1, std::memory_order_relaxed);              \
       mpfr_t ma, mb;                                                           \
       mpfr_init2(ma, significand);                                             \
       mpfr_init2(mb, significand);                                             \
