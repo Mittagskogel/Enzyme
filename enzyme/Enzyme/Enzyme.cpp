@@ -99,6 +99,8 @@ using namespace llvm;
 #endif
 #define DEBUG_TYPE "lower-enzyme-intrinsic"
 
+#include <iostream>
+
 llvm::cl::opt<bool> EnzymeEnable("enzyme-enable", cl::init(true), cl::Hidden,
                                  cl::desc("Run the Enzyme pass"));
 
@@ -2671,15 +2673,19 @@ public:
           enableEnzyme = true;
           batch = true;
         } else if (Fn->getName().contains("__enzyme_truncate_mem_func")) {
+          std::cout << "Found __enzyme_truncate_mem_func." << std::endl;
           enableEnzyme = true;
           truncateFuncMem = true;
         } else if (Fn->getName().contains("__enzyme_truncate_op_func")) {
+          std::cout << "Found __enzyme_truncate_op_func." << std::endl;
           enableEnzyme = true;
           truncateFuncOp = true;
         } else if (Fn->getName().contains("__enzyme_truncate_mem_value")) {
+          std::cout << "Found __enzyme_truncate_mem_value." << std::endl;
           enableEnzyme = true;
           truncateValue = true;
         } else if (Fn->getName().contains("__enzyme_expand_mem_value")) {
+          std::cout << "Found __enzyme_expand_mem_value." << std::endl;
           enableEnzyme = true;
           expandValue = true;
         } else if (Fn->getName().contains("__enzyme_likelihood")) {
