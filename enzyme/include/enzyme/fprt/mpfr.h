@@ -30,6 +30,10 @@
 
 #include "fprt.h"
 
+#include <iostream>
+#include <iomanip>
+#include <bit>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,7 +72,7 @@ extern "C" {
 
 #define __ENZYME_MPFR_ATTRIBUTES __attribute__((weak)) __attribute__((used))
 #define __ENZYME_MPFR_ORIGINAL_ATTRIBUTES __attribute__((weak))
-#define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE GMP_RNDN
+#define __ENZYME_MPFR_DEFAULT_ROUNDING_MODE MPFR_RNDN
 
 typedef struct __enzyme_fp {
   mpfr_t v;
@@ -197,6 +201,8 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
 #define __ENZYME_MPFR_BIN(OP_TYPE, LLVM_OP_NAME, MPFR_FUNC_NAME, FROM_TYPE,    \
                           RET, MPFR_GET, ARG1, MPFR_SET_ARG1, ARG2,            \
                           MPFR_SET_ARG2, ROUNDING_MODE)                        \
+  __ENZYME_MPFR_ORIGINAL_ATTRIBUTES                                            \
+  RET __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(ARG1 a, ARG2 b); \
   __ENZYME_MPFR_ATTRIBUTES                                                     \
   RET __enzyme_fprt_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(                  \
       ARG1 a, ARG2 b, int64_t exponent, int64_t significand, int64_t mode,     \
@@ -213,6 +219,24 @@ void __enzyme_fprt_64_52_delete(double a, int64_t exponent, int64_t significand,
       mpfr_clear(ma);                                                          \
       mpfr_clear(mb);                                                          \
       mpfr_clear(mc);                                                          \
+      double d = __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(a, b); \
+      if (false) {                                                             \
+        uint64_t ic, id;                                                       \
+        ic = ((*((uint64_t *)&c)) & (((uint64_t)1 << 54) - 1));                \
+        id = ((*((uint64_t *)&d)) & (((uint64_t)1 << 54) - 1));                \
+        std::cout << std::setprecision(20);                                    \
+        std::cout << loc << " " << #LLVM_OP_NAME << "("                        \
+                  << a << ", " << b << ") ="                                   \
+                  << " MPFR: " << ic                                           \
+                  << " double: " << id                                         \
+                  << " MPFR-double = " << c - d << std::endl;                  \
+        std::cout << #OP_TYPE <<  " " << #LLVM_OP_NAME << " "                  \
+                  << #MPFR_FUNC_NAME << " " << #FROM_TYPE << " "               \
+                  << #RET << " " << #MPFR_GET << " " <<  #ARG1 << " "          \
+                  << #MPFR_SET_ARG1 << " " << #ARG2 << " "                     \
+                  <<  #MPFR_SET_ARG2  << " " << #ROUNDING_MODE << " "          \
+                  << std::endl;                                                \
+      }                                                                        \
       return c;                                                                \
     } else if (__enzyme_fprt_is_mem_mode(mode)) {                              \
       __enzyme_fp *ma = __enzyme_fprt_double_to_ptr(a);                        \
