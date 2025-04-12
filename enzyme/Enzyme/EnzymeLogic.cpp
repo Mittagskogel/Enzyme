@@ -5631,16 +5631,20 @@ public:
       } else {
         switch (mode) {
         case TruncMemMode:
-          EmitWarning("FPNoFollow", CI,
-                      "Will not follow FP through this function call as the "
-                      "definition is not available.",
-                      CI);
+          if (!Func->getName().contains("enzyme_fprt_memory_access")) {
+            EmitWarning("FPNoFollow", CI,
+                        "Will not follow FP through this function call as the "
+                        "definition is not available.",
+                        CI);
+          }
           break;
         case TruncOpMode:
-          EmitWarning("FPNoFollow", CI,
-                      "Will not truncate flops in this function call as the "
-                      "definition is not available.",
-                      CI);
+          if (!Func->getName().contains("enzyme_fprt_memory_access")) {
+            EmitWarning("FPNoFollow", CI,
+                        "Will not truncate flops in this function call as the "
+                        "definition is not available.",
+                        CI);
+          }
           break;
         default:
           llvm_unreachable("Unknown trunc mode");
