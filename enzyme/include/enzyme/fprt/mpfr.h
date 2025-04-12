@@ -264,12 +264,14 @@ __ENZYME_MPFR_ATTRIBUTES
 void enzyme_fprt_op_clear();
 
 #ifdef ENZYME_FPRT_ENABLE_SHADOW_RESIDUALS
-#define SHADOW_ERR_REL 6.25e-1   //
-#define SHADOW_ERR_ABS 6.25e-1   // If reference is 0.
-// #define SHADOW_ERR_REL 2.5e-3   //
-// #define SHADOW_ERR_ABS 2.5e-3   // If reference is 0.
-// #define SHADOW_ERR_REL 6.0e-8   //
+// #define SHADOW_ERR_REL 6.25e-2   // 4bit
+// #define SHADOW_ERR_ABS 6.25e-2   // If reference is 0.
+// #define SHADOW_ERR_REL 2.5e-4   // 12bit
+// #define SHADOW_ERR_ABS 2.5e-4   // If reference is 0.
+// #define SHADOW_ERR_REL 6.0e-8   // 24bit
 // #define SHADOW_ERR_ABS 6.0e-8   // If reference is 0.
+#define SHADOW_ERR_REL 1e-6
+#define SHADOW_ERR_ABS 1e-6
 
 const std::set<const char *> ignore_op_list = {
   // "hy_recon.F90:114:3",
