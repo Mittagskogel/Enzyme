@@ -74,13 +74,13 @@ extern "C" {
 
 bool excl_trunc = false;
 
-typedef struct __enzyme_fp {
-  mpfr_t result;
-#ifdef ENZYME_FPRT_ENABLE_SHADOW_RESIDUALS
-  double excl_result;
-  double shadow;
-#endif
-} __enzyme_fp;
+// typedef struct __enzyme_fp {
+//   mpfr_t result;
+// #ifdef ENZYME_FPRT_ENABLE_SHADOW_RESIDUALS
+//   double excl_result;
+//   double shadow;
+// #endif
+// } __enzyme_fp;
 
 #ifdef ENZYME_FPRT_ENABLE_DUMPING
 #define ENZYME_DUMP(X, OP_TYPE, LLVM_OP_NAME, TAG)                             \
@@ -332,7 +332,6 @@ void enzyme_fprt_op_clear();
       mc->shadow =                                                             \
           __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(     \
               ma->shadow);                                                     \
-      if (false) {                                                             \
       if (excl_trunc) {                                                        \
         mc->excl_result =                                                      \
           __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(ma->excl_result); \
@@ -340,9 +339,6 @@ void enzyme_fprt_op_clear();
       } else {                                                                 \
         mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, ROUNDING_MODE);          \
         mc->excl_result = mpfr_get_##MPFR_GET(mc->result, ROUNDING_MODE);      \
-      }                                                                        \
-      } else {                                                                 \
-        mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, ROUNDING_MODE);          \
       }                                                                        \
       ENZYME_DUMP_RESULT(mc, OP_TYPE, LLVM_OP_NAME);                           \
       double trunc =                                                           \
@@ -433,7 +429,6 @@ void enzyme_fprt_op_clear();
       mc->shadow =                                                             \
           __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(     \
               ma->shadow, mb->shadow);                                         \
-      if (false) {                                                             \
       if (excl_trunc) {                                                        \
         mc->excl_result =                                                      \
           __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(     \
@@ -443,10 +438,6 @@ void enzyme_fprt_op_clear();
         mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, mb->result,              \
                               ROUNDING_MODE);                                  \
         mc->excl_result = mpfr_get_##MPFR_GET(mc->result, ROUNDING_MODE);      \
-      }                                                                        \
-      } else {                                                                 \
-        mpfr_##MPFR_FUNC_NAME(mc->result, ma->result, mb->result,              \
-                              ROUNDING_MODE);                                  \
       }                                                                        \
       ENZYME_DUMP_RESULT(mc, OP_TYPE, LLVM_OP_NAME);                           \
       double trunc =                                                           \
@@ -509,23 +500,18 @@ void enzyme_fprt_op_clear();
       madd->shadow =                                                           \
           __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(     \
               ma->shadow, mb->shadow, mc->shadow);                             \
-      if (false) {                                                             \
       if (excl_trunc) {                                                        \
         madd->shadow =                                                         \
             __enzyme_fprt_original_##FROM_TYPE##_##OP_TYPE##_##LLVM_OP_NAME(   \
                 ma->shadow, mb->shadow, mc->shadow);                           \
         mpfr_set_##MPFR_TYPE(madd->result, madd->excl_result, ROUNDING_MODE);  \
       } else {                                                                 \
-        mpfr_mul(madd->result, ma->result, mb->result, ROUNDING_MODE);         \
-        mpfr_add(madd->result, madd->result, mc->result, ROUNDING_MODE);       \
-        madd->excl_result = mpfr_get_##MPFR_TYPE(madd->result, ROUNDING_MODE); \
-      }                                                                        \
-      } else {                                                                 \
         mpfr_t mmul;                                                           \
         mpfr_init2(mmul, significand);                                         \
-        mpfr_mul(mmul, ma->result, mb->result, ROUNDING_MODE);                 \
-        mpfr_add(madd->result, mmul, mc->result, ROUNDING_MODE);               \
+        mpfr_mul(madd->result, ma->result, mb->result, ROUNDING_MODE);         \
+        mpfr_add(madd->result, madd->result, mc->result, ROUNDING_MODE);       \
         mpfr_clear(mmul);                                                      \
+        madd->excl_result = mpfr_get_##MPFR_TYPE(madd->result, ROUNDING_MODE); \
       }                                                                        \
       ENZYME_DUMP_RESULT(__enzyme_fprt_double_to_ptr(madd), OP_TYPE,           \
                          LLVM_OP_NAME);                                        \
