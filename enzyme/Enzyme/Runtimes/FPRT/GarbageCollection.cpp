@@ -55,13 +55,13 @@ struct {
 } __enzyme_mpfr_fps;
 
 double __enzyme_fprt_64_52_get(double _a, int64_t exponent, int64_t significand,
-                               int64_t mode, const char *loc) {
+                               int64_t mode, const char *loc, mpfr_t *scratch) {
   __enzyme_fp *a = __enzyme_fprt_double_to_ptr(_a);
   return mpfr_get_d(a->result, __ENZYME_MPFR_DEFAULT_ROUNDING_MODE);
 }
 
 double __enzyme_fprt_64_52_new(double _a, int64_t exponent, int64_t significand,
-                               int64_t mode, const char *loc) {
+                               int64_t mode, const char *loc, mpfr_t *scratch) {
   __enzyme_mpfr_fps.all.push_back({});
   __enzyme_fp *a = &__enzyme_mpfr_fps.all.back().fp;
   mpfr_init2(a->result, significand);
@@ -75,10 +75,10 @@ double __enzyme_fprt_64_52_new(double _a, int64_t exponent, int64_t significand,
 
 double __enzyme_fprt_64_52_const(double _a, int64_t exponent,
                                  int64_t significand, int64_t mode,
-                                 const char *loc) {
+                                 const char *loc, mpfr_t *scratch) {
   // TODO This should really be called only once for an appearance in the code,
   // currently it is called every time a flop uses a constant.
-  return __enzyme_fprt_64_52_new(_a, exponent, significand, mode, loc);
+  return __enzyme_fprt_64_52_new(_a, exponent, significand, mode, loc, scratch);
 }
 
 __enzyme_fp *__enzyme_fprt_64_52_new_intermediate(int64_t exponent,
